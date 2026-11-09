@@ -182,12 +182,12 @@ def write_word_karaoke_ass(batch_id: str, media_type: str, clip_number: int,
 
 
 def write_hook_overlay_ass(batch_id: str, media_type: str, clip_number: int, variant_id: str, hook_option, clip_duration: float):
-    """Create an animated, top-positioned ASS hook overlay for the first 2.6 seconds."""
+    """Create an animated, top-positioned ASS hook overlay for the first 2.8 seconds."""
     if not isinstance(hook_option, dict) or not str(hook_option.get("text", "")).strip():
         return None
-    text = re.sub(r"\\s+", " ", str(hook_option["text"])).strip()
+    text = re.sub(r"\s+", " ", str(hook_option["text"])).strip()
     # ASS override blocks must not be injectable through transcript text.
-    text = text.replace("\\", "").replace("{", "(").replace("}", ")").replace("\\n", " ")
+    text = text.replace("\\", "").replace("{", "(").replace("}", ")")
     text = text.replace("\r", " ").replace("\n", " ")[:150]
     if not text:
         return None
@@ -213,7 +213,7 @@ def write_hook_overlay_ass(batch_id: str, media_type: str, clip_number: int, var
     animated_text = r"{\fad(180,220)\fscx94\fscy94\t(0,420,\fscx100\fscy100)}" + text
     ass.append(f"Dialogue: 1,0:00:00.00,{ass_time(end_time)},Hook,,0,0,0,,{animated_text}")
     path = OUTPUTS / f"{batch_id}_{media_type}_{clip_number:02d}_{variant_id}_hook.ass"
-    path.write_text("\\n".join(ass) + "\\n", encoding="utf-8")
+    path.write_text("\n".join(ass) + "\n", encoding="utf-8")
     return path
 
 
