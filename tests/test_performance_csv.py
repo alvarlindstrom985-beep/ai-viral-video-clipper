@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from app.main import normalize_csv_header, parse_csv_metric, candidate_similarity, is_near_duplicate, retention_signal_score, normalize_ai_review, learning_group_score, learned_category_bonus, performance_age_cohort, parse_publish_age_hours, build_performance_summary, performance_viewer_behavior
+from app.main import normalize_csv_header, parse_csv_metric, candidate_similarity, is_near_duplicate, retention_signal_score, normalize_ai_review, learning_group_score, learned_category_bonus, performance_age_cohort, parse_publish_age_hours, build_performance_summary, performance_viewer_behavior, recommend_edit_variants
 
 
 class YouTubeCsvMetricTests(unittest.TestCase):
@@ -76,6 +76,41 @@ class PublicationAgeLearningTests(unittest.TestCase):
 
 
 class AdaptiveLearningTests(unittest.TestCase):
+    def test_variant_recommendation_requires_three_examples_for_each_variant(self):
+        entries = []
+        for variant, score in (("v1", 90), ("v2", 70), ("v3", 50)):
+            entries.extend([
+                {"format": "short", "category": "Rage/ilska", "variant": variant,
+                 "measurement_age_hours": 24, "views": 100, "performance_score": score}
+                for _ in range(3)
+            ])
+        result = recommend_edit_variants(entries)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["recommended_variant"], "v1")
+        self.assertEqual(result[0]["samples_per_variant"], {"v1": 3, "v2": 3, "v3": 3})
+
+    def test_variant_recommendation_does_not_mix_categories_or_age_cohorts(self):
+        entries = []
+        for variant in ("v1", "v2", "v3"):
+            for _ in range(3):
+                entries.append({"format": "short", "category": "Rage/ilska", "variant": variant,
+                                "measurement_age_hours": 24, "views": 100, "performance_score": 80})
+        entries.extend([
+            {"format": "short", "category": "Humor/skratt", "variant": "v1",
+             "measurement_age_hours": 24, "views": 100, "performance_score": 99}
+        ] * 3)
+        self.assertEqual(len(recommend_edit_variants(entries)), 1)
+
+    def test_variant_recommendation_returns_none_when_one_variant_is_under_sampled(self):
+        entries = []
+        for variant, count in (("v1", 3), ("v2", 3), ("v3", 2)):
+            entries.extend([
+                {"format": "short", "category": "GTA-händelse", "variant": variant,
+                 "measurement_age_hours": 24, "views": 100, "performance_score": 80}
+                for _ in range(count)
+            ])
+        self.assertEqual(recommend_edit_variants(entries), [])
+
     def test_small_samples_are_shrunk_toward_channel_average(self):
         estimate = learning_group_score([
             {"performance_score": 100},
