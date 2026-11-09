@@ -79,6 +79,26 @@ class RetentionSignalTests(unittest.TestCase):
         self.assertIn("öppningen kan behöva snabbare kontext eller en tydligare krok", result["reasons"])
 
 
+class HookGeneratorTests(unittest.TestCase):
+    def test_generates_three_distinct_transcript_grounded_hooks(self):
+        from app.main import generate_hook_options
+        transcript = [
+            {"start": 10.0, "end": 11.0, "text": "Wait, what is happening?"},
+            {"start": 14.0, "end": 15.0, "text": "That was insane!"},
+            {"start": 20.0, "end": 21.0, "text": "No way!"}
+        ]
+        result = generate_hook_options(transcript, 10, 30)
+        self.assertEqual(result["status"], "generated")
+        self.assertEqual(len(result["options"]), 3)
+        self.assertEqual(len({item["text"] for item in result["options"]}), 3)
+        self.assertIn("Wait, what is happening", result["options"][0]["text"])
+
+    def test_missing_transcript_creates_no_fabricated_hook(self):
+        from app.main import generate_hook_options
+        result = generate_hook_options([], 0, 20)
+        self.assertEqual(result["status"], "no_transcript")
+        self.assertEqual(result["options"], [])
+
 class EditSuggestionTests(unittest.TestCase):
     def test_suggests_trim_for_long_silent_opening_and_ending(self):
         from app.main import suggest_edit_points
