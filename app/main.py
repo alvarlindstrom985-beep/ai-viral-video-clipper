@@ -17,12 +17,14 @@ import urllib.parse
 import urllib.request
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
+
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 ROOT = Path(__file__).resolve().parent.parent
 UPLOADS = ROOT / "uploads"
 OUTPUTS = ROOT / "outputs"
+PERFORMANCE_FILE = OUTPUTS / "performance.json"
 STATIC = ROOT / "static"
 for folder in (UPLOADS, OUTPUTS, STATIC):
     folder.mkdir(exist_ok=True)
@@ -963,6 +965,141 @@ def download_highlight_report(batch_id: str):
     if not path.is_file():
         raise HTTPException(404, "Highlight report not found")
     return FileResponse(path, media_type="application/json", filename="highlight-report.json")
+
+
+
+PERFORMANCE_CATEGORIES = {
+    "Rage/ilska", "Stark reaktion", "Humor/sk skratt", "GTA-händelse", "Annat"
+}
+PERFORMANCE_FORMATS = {"short", "long"}
+PERFORMANCE_VARIANTS = {"v1", "v2", "v3"}
+
+
+def read_performance_entries():
+    if not PERFORMANCE_FILE.is_file():
+        return []
+    try:
+        data = json.loads(PERFORMANCE_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def save_performance_entries(entries):
+    temporary = PERFORMANCE_FILE.with_suffix(".tmp")
+    temporary.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(PERFORMANCE_FILE)
+
+
+def performance_score(entry):
+    views = max(1, entry.get("views", 0))
+    engagement = min(100.0, ((entry.get("likes", 0) + entry.get("comments", 0) + entry.get("shares", 0)) / views) * 1000.0)
+    if entry.get("format") == "short":
+        stayed = entry.get("stayed_to_watch_pct")
+        retention = entry.get("average_view_percentage")
+        values = []
+        if stayed is not None:
+            values.append((0.40, stayed))
+        if retention is not None:
+            values.append((0.40, retention))
+        values.append((0.20, engagement))
+    else:
+        retention = entry.get("average_view_percentage")
+        ctr = entry.get("click_through_rate_pct")
+        values = []
+        if retention is not None:
+            values.append((0.55 if ctr is not None else 0.70, retention))
+        if ctr is not None:
+            values.append((0.20, ctr * 5.0))
+        values.append((0.25 if ctr is not None else 0.30, engagement))
+    weight = sum(item[0] for item in values)
+    return round(sum(w * min(100.0, max(0.0, value)) for w, value in values) / weight, 2) if weight else 0.0
+
+
+def build_performance_summary(entries):
+    groups = {}
+    for entry in entries:
+        for key, label in (("category", entry.get("category", "Annat")), ("variant", entry.get("variant", "okänd"))):
+            group_key = (key, label, entry.get("format", "short"))
+            groups.setdefault(group_key, []).append(entry)
+    summaries = []
+    for (key, label, media_format), items in groups.items():
+        summaries.append({
+            "dimension": key, "label": label, "format": media_format,
+            "samples": len(items),
+            "average_score": round(sum(item.get("performance_score", 0) for item in items) / len(items), 2),
+            "average_views": round(sum(item.get("views", 0) for item in items) / len(items), 1),
+            "average_retention": round(sum(item.get("average_view_percentage", 0) for item in items if item.get("average_view_percentage") is not None) / max(1, sum(1 for item in items if item.get("average_view_percentage") is not None)), 2),
+            "average_stayed": round(sum(item.get("stayed_to_watch_pct", 0) for item in items if item.get("stayed_to_watch_pct") is not None) / max(1, sum(1 for item in items if item.get("stayed_to_watch_pct") is not None)), 2)
+        })
+    category_groups = [item for item in summaries if item["dimension"] == "category" and item["samples"] >= 3]
+    variant_groups = [item for item in summaries if item["dimension"] == "variant" and item["samples"] >= 3]
+    return {
+        "total_videos": len(entries),
+        "summaries": sorted(summaries, key=lambda item: (item["dimension"], -item["average_score"])),
+        "best_category": max(category_groups, key=lambda item: item["average_score"], default=None),
+        "best_variant": max(variant_groups, key=lambda item: item["average_score"], default=None),
+        "minimum_samples_for_recommendation": 3,
+        "note": "Poängen är en intern jämförelsesiffra, inte en prognos för viralitet. Jämför helst videor med liknande ålder och format."
+    }
+
+
+@app.get("/api/performance")
+def get_performance():
+    entries = read_performance_entries()
+    return {"entries": entries, "insights": build_performance_summary(entries)}
+
+
+@app.post("/api/performance")
+def add_performance(payload: dict):
+    required = ("title", "category", "format", "variant", "views")
+    if any(key not in payload for key in required):
+        raise HTTPException(400, "Fyll i titel, kategori, format, variant och visningar.")
+    title = str(payload.get("title", "")).strip()[:120]
+    category = str(payload.get("category", ""))
+    media_format = str(payload.get("format", ""))
+    variant = str(payload.get("variant", ""))
+    if not title or category not in PERFORMANCE_CATEGORIES or media_format not in PERFORMANCE_FORMATS or variant not in PERFORMANCE_VARIANTS:
+        raise HTTPException(400, "Ogiltig titel, kategori, format eller videovariant.")
+    numeric_fields = {
+        "views": (0, 10**12, True),
+        "engaged_views": (0, 10**12, True),
+        "stayed_to_watch_pct": (0, 100, False),
+        "average_view_duration_sec": (0, 86400, False),
+        "average_view_percentage": (0, 1000, False),
+        "click_through_rate_pct": (0, 100, False),
+        "likes": (0, 10**12, True),
+        "comments": (0, 10**12, True),
+        "shares": (0, 10**12, True),
+        "subscribers_gained": (0, 10**12, True)
+    }
+    cleaned = {}
+    for key, (minimum, maximum, integer_only) in numeric_fields.items():
+        value = payload.get(key)
+        if value in (None, ""):
+            cleaned[key] = None if not integer_only else 0
+            continue
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            raise HTTPException(400, f"{key} måste vara ett tal.")
+        if not math.isfinite(number) or number < minimum or number > maximum or (integer_only and not number.is_integer()):
+            raise HTTPException(400, f"{key} ligger utanför tillåtet intervall.")
+        cleaned[key] = int(number) if integer_only else round(number, 2)
+    entry = {
+        "id": uuid.uuid4().hex[:12],
+        "title": title,
+        "category": category,
+        "format": media_format,
+        "variant": variant,
+        "recorded_at": int(time.time()),
+        **cleaned
+    }
+    entry["performance_score"] = performance_score(entry)
+    entries = read_performance_entries()
+    entries.append(entry)
+    save_performance_entries(entries)
+    return {"entry": entry, "insights": build_performance_summary(entries)}
 
 
 @app.get("/api/batch/download/{batch_id}")
