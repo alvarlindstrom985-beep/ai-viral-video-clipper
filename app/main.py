@@ -718,7 +718,11 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
             if item["end"] > payoff_start and item["start"] < end
         ]
         payoff_text = " ".join(item["text"].lower() for item in payoff_words)
-        payoff_signal = any(phrase in payoff_text for phrase in STREAMER_FUNNY_PHRASES + RAGE_PHRASES)
+        payoff_phrases = (
+            STREAMER_FUNNY_PHRASES | RAGE_PHRASES | GAME_EVENT_PHRASES
+            | {phrase.lower() for phrase in STREAMER_REACTION_PHRASES}
+        )
+        payoff_signal = any(phrase in payoff_text for phrase in payoff_phrases)
         payoff_signal = payoff_signal or bool(LAUGHTER_PATTERN.search(payoff_text))
         payoff_score = 2.0 if payoff_signal else 0.0
 
