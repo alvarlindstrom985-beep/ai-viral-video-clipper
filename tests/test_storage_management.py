@@ -84,6 +84,7 @@ class StorageManagementTests(unittest.TestCase):
                 patch.object(main, "OUTPUTS", outputs),
                 patch.object(main, "BATCH_JOBS", {"f" * 12: stale_state}),
             ):
+                candidates = main.storage_cleanup_candidates()
                 self.assertIn(old_file, [item["path"] for item in candidates])
 
     def test_disk_guard_rejects_upload_when_reserve_would_be_breached(self):
