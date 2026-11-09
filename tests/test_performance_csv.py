@@ -172,6 +172,48 @@ class AdaptiveLearningTests(unittest.TestCase):
         self.assertGreater(bonus, 0)
 
 
+class DiverseBatchSelectionTests(unittest.TestCase):
+    def candidate(self, score, start, categories):
+        return {"score": score, "start": start, "end": start + 30,
+                "categories": categories, "_similarity_text": f"moment {start}"}
+
+    def test_keeps_the_highest_ranked_candidate_first(self):
+        selected = select_diverse_candidates([
+            self.candidate(95, 0, ["Rage/ilska-signal"]),
+            self.candidate(80, 40, ["GTA-händelse"])
+        ], 2, allow_overlap=False)
+        self.assertEqual(selected[0]["score"], 95)
+
+    def test_prefers_category_variety_when_scores_are_close(self):
+        selected = select_diverse_candidates([
+            self.candidate(95, 0, ["Rage/ilska-signal"]),
+            self.candidate(92, 40, ["Rage/ilska-signal"]),
+            self.candidate(90, 80, ["GTA-händelse"])
+        ], 2, allow_overlap=False)
+        self.assertEqual({tuple(item["categories"]) for item in selected},
+                         {("Rage/ilska-signal",), ("GTA-händelse",)})
+        self.assertTrue(any(item["selection_diversity_adjustment"] > 0 for item in selected))
+
+    def test_fills_remaining_slots_when_only_one_category_exists(self):
+        selected = select_diverse_candidates([
+            self.candidate(90, 0, ["Streamerhumor"]),
+            self.candidate(80, 40, ["Streamerhumor"]),
+            self.candidate(70, 80, ["Streamerhumor"])
+        ], 3, allow_overlap=False)
+        self.assertEqual(len(selected), 3)
+
+    def test_never_selects_overlapping_or_near_duplicate_windows(self):
+        selected = select_diverse_candidates([
+            self.candidate(95, 0, ["Streamerhumor"]),
+            self.candidate(90, 10, ["GTA-händelse"]),
+            self.candidate(80, 40, ["GTA-händelse"])
+        ], 3, allow_overlap=False)
+        self.assertEqual(len(selected), 2)
+        self.assertTrue(all(selected[i]["end"] <= selected[j]["start"] or
+                            selected[j]["end"] <= selected[i]["start"]
+                            for i in range(len(selected)) for j in range(i + 1, len(selected))))
+
+
 class ClipSimilarityTests(unittest.TestCase):
     def test_same_time_window_is_duplicate(self):
         a = {"start": 10, "end": 40, "_similarity_text": "police chase no way"}
