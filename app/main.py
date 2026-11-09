@@ -1225,11 +1225,21 @@ DEFAULT_OUTPUT_RETENTION_DAYS = 30
 DEFAULT_UPLOAD_RETENTION_DAYS = 30
 
 
-def _protected_storage_prefixes():
-    """Keep source and output files needed by queued, running, or recoverable batches."""
+def _protected_storage_prefixes(now=None):
+    """Keep active jobs and recent recoverable jobs; expire stale recovery protection after 30 days."""
+    now = time.time() if now is None else now
     protected = set()
     for state in BATCH_JOBS.values():
-        if state.get("status") in {"queued", "running", "interrupted", "failed"}:
+        status = state.get("status")
+        keep = status in {"queued", "running"}
+        if status in {"interrupted", "failed"}:
+            updated_at = state.get("updated_at")
+            try:
+                saved_time = datetime.fromisoformat(str(updated_at)).timestamp()
+                keep = now - saved_time <= DEFAULT_UPLOAD_RETENTION_DAYS * 86400
+            except (TypeError, ValueError, OverflowError):
+                keep = True
+        if keep:
             for key in ("batch_id", "job_id"):
                 value = str(state.get(key, ""))
                 if re.fullmatch(r"[a-f0-9]{12}", value):
