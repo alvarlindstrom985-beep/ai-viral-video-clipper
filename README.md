@@ -23,6 +23,10 @@ The cleanup preview identifies known generated exports older than 30 days and so
 
 Batch job state is stored in `outputs/batch_jobs.sqlite3`, including the selected source job, render settings, progress, and completed export metadata. After a server restart, jobs that were queued or running are restored as **interrupted** rather than disappearing. Use `POST /api/batch/resume/{batch_id}` to restart an interrupted or failed batch with its saved settings. The original uploaded source file must still exist in the `uploads/` directory. A restart reruns the batch from the beginning; it does not continue an FFmpeg render from the exact frame where it stopped. Keep the `uploads/` and `outputs/` directories on persistent storage, and run a single application process for this local MVP.
 
+## Automated render quality diagnostics
+
+Every rendered export is checked with FFprobe for a readable video stream, expected dimensions, expected duration, and an audio stream. FFmpeg then runs advisory diagnostics for long black segments, frozen frames, and the audio peak level. Potentially problematic segments and peaks near 0 dB are shown as warnings on each draft card; they do not automatically reject a clip because dark scenes, intentional pauses, and loud effects can be valid creative choices. A missing audio stream or invalid technical metadata does fail the technical gate. These checks do not assess subtitle placement, story quality, or actual audience retention, so review each exported video manually before publishing.
+
 ## End-to-end render verification
 
 The GitHub Actions test suite installs FFmpeg and runs a real render integration test using a generated synthetic test pattern and tone (not third-party footage). It exercises the batch worker, three edit variants, vertical scaling/cropping, audio encoding, sentence subtitles, animated ASS hook overlays, FFprobe validation, and the ZIP/report export. The test patches analysis/transcription with deterministic test data so it does not download Whisper models or call external AI services. It does not prove quality on arbitrary user recordings; test your own footage locally before publishing.
