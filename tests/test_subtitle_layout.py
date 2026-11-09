@@ -44,6 +44,23 @@ class SubtitleLayoutTests(unittest.TestCase):
             result = inspect_ass_layout(path, 1080, 1920)
         self.assertTrue(any("för bred" in warning for warning in result["warnings"]))
 
+    def test_bottom_caption_in_interface_safe_zone_is_reported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "captions.ass"
+            path.write_text(ass_document(margin_v=80), encoding="utf-8")
+            result = inspect_ass_layout(path, 1080, 1920)
+        self.assertTrue(any("nedre gränssnittszonen" in warning for warning in result["warnings"]))
+
+    def test_top_hook_too_close_to_edge_is_reported(self):
+        document = ass_document(margin_v=30).replace(
+            "Alignment, MarginL", "Alignment, MarginL"
+        ).replace(",1,0,1,4,1,2,70,70,30,1", ",1,0,1,4,1,8,70,70,30,1")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "hook.ass"
+            path.write_text(document, encoding="utf-8")
+            result = inspect_ass_layout(path, 1080, 1920)
+        self.assertTrue(any("övre gränssnittszonen" in warning for warning in result["warnings"]))
+
 
 if __name__ == "__main__":
     unittest.main()
