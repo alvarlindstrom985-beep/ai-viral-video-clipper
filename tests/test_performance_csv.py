@@ -79,6 +79,30 @@ class RetentionSignalTests(unittest.TestCase):
         self.assertIn("öppningen kan behöva snabbare kontext eller en tydligare krok", result["reasons"])
 
 
+class EditSuggestionTests(unittest.TestCase):
+    def test_suggests_trim_for_long_silent_opening_and_ending(self):
+        from app.main import suggest_edit_points
+        transcript = [{"start": 3.0, "end": 8.0, "text": "Here we go"}, {"start": 25.0, "end": 27.0, "text": "That was wild"}]
+        result = suggest_edit_points(0, 30, transcript, "short")
+        self.assertEqual(result["status"], "suggested")
+        self.assertAlmostEqual(result["recommended_start_seconds"], 2.75)
+        self.assertAlmostEqual(result["recommended_end_seconds"], 27.45)
+        self.assertGreater(result["suggested_trim_seconds"], 0)
+
+    def test_no_transcript_keeps_original_timestamps(self):
+        from app.main import suggest_edit_points
+        result = suggest_edit_points(10, 40, [], "short")
+        self.assertEqual(result["status"], "no_transcript")
+        self.assertEqual(result["recommended_start_seconds"], 10)
+        self.assertEqual(result["recommended_end_seconds"], 40)
+
+    def test_short_clip_is_not_trimmed_below_safe_duration(self):
+        from app.main import suggest_edit_points
+        transcript = [{"start": 4.0, "end": 18.0, "text": "A long line"}]
+        result = suggest_edit_points(0, 20, transcript, "short")
+        self.assertEqual(result["status"], "unchanged")
+        self.assertEqual(result["suggested_trim_seconds"], 0)
+
 class RenderQualityTests(unittest.TestCase):
     def test_missing_render_is_rejected(self):
         from pathlib import Path
