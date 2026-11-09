@@ -287,6 +287,122 @@ def inspect_render_quality(path: Path, expected_duration: float, expected_width:
     return {"passed": bool(valid_video and valid_duration), "reason": "OK" if valid_video and valid_duration else "Fel upplösning, saknat videospår eller fel längd", "warnings": warnings, "duration": round(duration, 2)}
 
 
+
+def normalize_ai_review(payload):
+    """Validate and clamp structured reviewer output before it reaches the UI."""
+    if not isinstance(payload, dict):
+        raise ValueError("AI-granskaren returnerade inte ett JSON-objekt")
+    def bounded(value, default=0):
+        try:
+            return max(0, min(100, int(round(float(value)))))
+        except (TypeError, ValueError):
+            return default
+    def short_list(value, limit=4):
+        if not isinstance(value, list):
+            return []
+        return [str(item).strip()[:180] for item in value if str(item).strip()][:limit]
+    verdict = str(payload.get("verdict", "Behöver manuell granskning")).strip()[:80]
+    return {
+        "status": "completed",
+        "score": bounded(payload.get("score")),
+        "hook_score": bounded(payload.get("hook_score")),
+        "clarity_score": bounded(payload.get("clarity_score")),
+        "visual_interest_score": bounded(payload.get("visual_interest_score")),
+        "payoff_score": bounded(payload.get("payoff_score")),
+        "story_coherence_score": bounded(payload.get("story_coherence_score")),
+        "verdict": verdict or "Behöver manuell granskning",
+        "strengths": short_list(payload.get("strengths")),
+        "weaknesses": short_list(payload.get("weaknesses")),
+        "suggestion": str(payload.get("suggestion", "")).strip()[:300]
+    }
+
+
+def review_clip_with_ai(source: Path, start: float, end: float, transcript):
+    """Optionally review three sampled frames plus transcript using the OpenAI Responses API."""
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        return {"status": "not_configured", "message": "AI-granskning är inte aktiverad"}
+    model = os.getenv("OPENAI_CLIP_REVIEW_MODEL", "gpt-4.1-mini").strip() or "gpt-4.1-mini"
+    transcript_text = " ".join(
+        item.get("text", "") for item in (transcript or [])
+        if item.get("end", 0) >= start and item.get("start", 0) <= end
+    )[:3500]
+    frame_data = []
+    sample_times = sorted(set([
+        min(end, start + min(1.0, max(0.2, (end - start) * 0.08))),
+        start + (end - start) * 0.5,
+        max(start, end - min(1.0, max(0.2, (end - start) * 0.08)))
+    ]))
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            for index, timestamp in enumerate(sample_times):
+                frame_path = Path(temp_dir) / f"review_{index}.jpg"
+                result = run_command([
+                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                    "-ss", f"{timestamp:.3f}", "-i", str(source),
+                    "-frames:v", "1", "-vf", "scale=512:-2",
+                    "-q:v", "7", str(frame_path)
+                ])
+                if result.returncode == 0 and frame_path.is_file():
+                    encoded = __import__("base64").b64encode(frame_path.read_bytes()).decode("ascii")
+                    frame_data.append({
+                        "type": "input_image",
+                        "image_url": "data:image/jpeg;base64," + encoded,
+                        "detail": "low"
+                    })
+        if not frame_data:
+            return {"status": "unavailable", "message": "Kunde inte skapa granskningsbilder"}
+        prompt = (
+            "Du är en försiktig videoredaktör som granskar ett kort klipp för publikens tittarintresse. "
+            "Du får tre stillbilder från början, mitten och slutet samt eventuellt ett taltranskript. "
+            "Bedöm bara sådant som underlaget faktiskt visar; hitta inte på händelser eller känslor. "
+            "Stillbilder kan inte bevisa rörelse eller exakt timing. Bedöm om början snabbt ger sammanhang, "
+            "om händelsen går att förstå, om bilderna verkar visuellt intressanta och om slutet ger en payoff. "
+            "Svara på svenska med ENDAST ett JSON-objekt med nycklarna score, hook_score, clarity_score, "
+            "visual_interest_score, payoff_score, story_coherence_score (heltal 0-100), verdict (kort text), "
+            "strengths (lista med max 3 korta punkter), weaknesses (lista med max 3 korta punkter), "
+            "suggestion (en konkret redigeringsidé). Poängen är redaktionella uppskattningar, inte "
+            "förutsägelser om faktisk tittarretention. Om transkript saknas ska du inte låtsas att du hört ljud.\n\n"
+            "Transkript: " + (transcript_text or "[Inget transkript tillgängligt]")
+        )
+        content = [{"type": "input_text", "text": prompt}] + frame_data
+        body = json.dumps({
+            "model": model,
+            "input": [{"role": "user", "content": content}],
+            "max_output_tokens": 450
+        }).encode("utf-8")
+        request = urllib.request.Request(
+            "https://api.openai.com/v1/responses",
+            data=body,
+            headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"},
+            method="POST"
+        )
+        with urllib.request.urlopen(request, timeout=55) as response:
+            response_data = json.loads(response.read().decode("utf-8"))
+        output_text = ""
+        for output_item in response_data.get("output", []):
+            if output_item.get("type") == "message":
+                for part in output_item.get("content", []):
+                    if part.get("type") == "output_text":
+                        output_text += part.get("text", "")
+        if not output_text:
+            raise ValueError("AI-granskaren returnerade inget textresultat")
+        try:
+            parsed = json.loads(output_text)
+        except json.JSONDecodeError:
+            first, last = output_text.find("{"), output_text.rfind("}")
+            if first < 0 or last <= first:
+                raise
+            parsed = json.loads(output_text[first:last + 1])
+        review = normalize_ai_review(parsed)
+        review["model"] = model
+        review["frames_reviewed"] = len(frame_data)
+        return review
+    except Exception:
+        # An optional reviewer must never stop local clip generation.
+        return {"status": "error", "message": "AI-granskningen kunde inte slutföras; exporten fortsätter ändå"}
+
+
 def get_duration(source: Path) -> float:
     result = run_command([
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -944,6 +1060,13 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                 visual_samples, allow_overlap=False, media_format="long"
             )
 
+        # Optional vision-language review. Limit API calls to keep usage predictable.
+        ai_review_count = 0
+        try:
+            ai_review_limit = max(1, min(30, int(os.getenv("OPENAI_CLIP_REVIEW_MAX_CLIPS", "12"))))
+        except ValueError:
+            ai_review_limit = 12
+
         # Save an editable timestamp index for every selected highlight.
         highlights = []
         for media_type, candidates, clip_duration in (
@@ -951,6 +1074,16 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
             ("long", long_candidates, min(float(long_length), duration))
         ):
             for index, candidate in enumerate(candidates, 1):
+                if os.getenv("OPENAI_API_KEY", "").strip() and ai_review_count < ai_review_limit:
+                    state["stage"] = f"AI-granskar {media_type} {index}"
+                    ai_review = review_clip_with_ai(
+                        source, candidate["start"], candidate["start"] + clip_duration, transcript
+                    )
+                    ai_review_count += 1
+                elif os.getenv("OPENAI_API_KEY", "").strip():
+                    ai_review = {"status": "limit_reached", "message": "Granskningsgränsen för denna batch är nådd"}
+                else:
+                    ai_review = {"status": "not_configured", "message": "Lägg till OPENAI_API_KEY på servern för AI-granskning"}
                 nearby_text = [
                     item["text"] for item in (transcript or [])
                     if item["end"] >= candidate["start"] and item["start"] <= candidate["start"] + clip_duration
@@ -977,7 +1110,8 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     "signal_diversity_score": candidate.get("signal_diversity_score", 0),
                     "payoff_score": candidate.get("payoff_score", 0),
                     "rage_phrases": candidate["rage_phrases"],
-                    "transcript_excerpt": " ".join(nearby_text)[:1200]
+                    "transcript_excerpt": " ".join(nearby_text)[:1200],
+                    "ai_review": ai_review
                 })
         state["highlights"] = highlights
 
