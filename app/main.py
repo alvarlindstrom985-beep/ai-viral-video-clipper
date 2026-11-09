@@ -543,53 +543,40 @@ def inspect_ass_layout(path: Path, expected_width: int, expected_height: int):
 
     # Check explicit ASS line text against a rough average glyph width. This only
     # flags likely overflow; actual font metrics and renderer wrapping can differ.
-    dialogue_lines = [line.split(",", 9)[-1] for line in content.splitlines()
-                      if line.startswith("Dialogue:") and line.count(",") >= 9]
-    for text_line in dialogue_lines:
-        plain = re.sub(r"\{[^}]*\}", "", text_line).strip()
-        if not plain:
+    for event in content.splitlines():
+        if not event.startswith("Dialogue:") or event.count(",") < 9:
             continue
-        style_name = "Default"
-        for line in content.splitlines():
-            if line.startswith("Dialogue:"):
-                fields = line.split(",", 9)
-                if len(fields) == 10 and fields[-1] == text_line:
-                    style_name = fields[3]
-                    break
+        fields = event.split(",", 9)
+        style_name = fields[3]
+        event_text = fields[9]
+        plain = re.sub(r"\\{[^}]*\\}", "", event_text).strip()
         style = styles.get(style_name, next(iter(styles.values()), {}))
         try:
             font_size = float(style.get("fontsize", 0))
             available = width - int(style.get("marginl", 0)) - int(style.get("marginr", 0))
+            margin_v = int(style.get("marginv", 0))
+            alignment = int(style.get("alignment", 2))
         except (TypeError, ValueError):
             continue
-        if font_size and len(plain) * font_size * 0.58 > available:
+        if plain and font_size and len(plain) * font_size * 0.58 > available:
             result["warnings"].append("En hook-/undertextrad kan bli för bred för bildytan")
 
-        # Approximate the vertical anchor from ASS alignment and margins.
-        # These are advisory platform/game-HUD safe zones, not GTA-specific OCR.
-        try:
-            if 1 <= alignment <= 3:
-                anchor_y = height - margin_v
-                if anchor_y + font_size * 0.25 >= height * 0.88:
-                    result["warnings"].append(
-                        "Undertext kan hamna i nedre gränssnittszonen (spel-HUD/Shorts-kontroller)"
-                    )
-            elif 7 <= alignment <= 9:
-                anchor_y = margin_v
-                if anchor_y - font_size * 0.25 <= height * 0.08:
-                    result["warnings"].append(
-                        "Hooktext kan hamna för nära övre gränssnittszonen"
-                    )
-        except (NameError, TypeError):
-            pass
+        # Approximate ASS anchors against generic interface safe zones.
+        if 1 <= alignment <= 3:
+            anchor_y = height - margin_v
+            if anchor_y + font_size * 0.25 >= height * 0.88:
+                result["warnings"].append(
+                    "Undertext kan hamna i nedre gränssnittszonen (spel-HUD/Shorts-kontroller)"
+                )
+        elif 7 <= alignment <= 9:
+            anchor_y = margin_v
+            if anchor_y - font_size * 0.25 <= height * 0.08:
+                result["warnings"].append(
+                    "Hooktext kan hamna för nära övre gränssnittszonen"
+                )
 
-    # Explicit event positioning can override style alignment. Flag positions
-    # close to the top/bottom safe-zone boundaries for manual review.
-    for event in content.splitlines():
-        if not event.startswith("Dialogue:") or event.count(",") < 9:
-            continue
-        event_text = event.split(",", 9)[-1]
-        position = re.search(r"\\\\pos\\(([-0-9.]+),([-0-9.]+)\\\\)", event_text)
+        # Explicit positioning overrides the style anchor.
+        position = re.search(r"\\\\pos\\(([-0-9.]+),([-0-9.]+)\\)", event_text)
         if position:
             try:
                 pos_y = float(position.group(2))
