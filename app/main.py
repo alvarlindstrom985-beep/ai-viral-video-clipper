@@ -1247,6 +1247,42 @@ def select_diverse_candidates(candidates, clip_count: int, allow_overlap=True, c
     return sorted(selected, key=lambda item: item["score"], reverse=True)
 
 
+
+def learned_variant_hint(categories, media_format, performance_entries=None):
+    """Suggest a historically stronger edit recipe without removing other variants."""
+    category_map = {
+        "Rage/ilska-signal": "Rage/ilska",
+        "Streamerreaktion": "Stark reaktion",
+        "Streamerhumor": "Humor/skratt",
+        "Visuell möjlig skrattreaktion": "Humor/skratt",
+        "GTA-händelse": "GTA-händelse",
+        "Aktivt ögonblick": "Annat"
+    }
+    entries = read_performance_entries() if performance_entries is None else performance_entries
+    supported = {category_map[item] for item in categories if item in category_map}
+    if not supported:
+        return None
+    matches = [
+        item for item in recommend_edit_variants(entries)
+        if item.get("format") == media_format and item.get("category") in supported
+    ]
+    if not matches:
+        return None
+    best = max(matches, key=lambda item: (
+        item.get("confidence", 0),
+        item.get("margin", 0),
+        min(item.get("samples_per_variant", {}).values() or [0])
+    ))
+    return {
+        "recommended_variant": best["recommended_variant"],
+        "category": best["category"],
+        "age_cohort": best["age_cohort"],
+        "confidence": best["confidence"],
+        "margin": best["margin"],
+        "samples_per_variant": best["samples_per_variant"],
+        "note": "Historisk rekommendation – alla tre versioner skapas fortfarande."
+    }
+
 def score_windows(duration: float, clip_len: float, levels, transcript, clip_count: int, visual_samples=None, allow_overlap=True, media_format='short'):
     latest_start = max(0.0, duration - clip_len)
     step = max(3.0, min(8.0, clip_len / 5))
@@ -1315,7 +1351,7 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
 
         hook = score_opening_hook(start, levels, transcript)
         hook_bonus = hook["score"]
-        learning_bonus = learned_category_bonus(categories, media_format, learning_entries)
+        learning_bonus = learned_category_bonus(categories, media_format, learning_entries)\n        variant_hint = learned_variant_hint(categories, media_format, learning_entries)
 
         # Measure whether activity is sustained across the clip, rather than one isolated spike.
         # Four buckets combine speech presence and audio activity; these are ranking hints, not
@@ -1869,7 +1905,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     results.append({
                         "name": filename, "url": f"/api/clips/{filename}",
                         "type": media_type, "clip_number": clip_index,
-                        "variant": recipe["id"], "variant_label": recipe["label"],
+                        "variant": recipe["id"], "variant_label": recipe["label"],\n                        "learned_variant_recommended": bool(candidate.get("learned_variant_hint") and candidate["learned_variant_hint"]["recommended_variant"] == recipe["id"]),\n                        "learned_variant_hint": candidate.get("learned_variant_hint"),
                         "start": round(candidate["start"], 1),
                         "end": round(candidate["start"] + clip_duration, 1),
                         "duration": round(clip_duration, 1),
