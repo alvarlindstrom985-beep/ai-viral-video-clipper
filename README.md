@@ -126,3 +126,10 @@ The app uses the OpenAI Responses API with image inputs. Without `OPENAI_API_KEY
 **Privacy:** when enabled, up to three extracted frames and the available transcript excerpt from each reviewed clip are sent to OpenAI for analysis. Configure the key only on the server, never in frontend JavaScript or a public repository. Only process recordings you own or have permission to use. Review OpenAI's current data-use and retention terms before sending footage.
 
 **Limitations:** the reviewer sees still images rather than the full moving video and does not directly listen to the audio. It can miss fast action, timing, sarcasm, context, and important events between sampled frames. Its scores and suggestions need human review.
+
+
+## Manual edit-point assistant
+
+Each selected highlight now includes conservative trim suggestions based on detected speech timestamps. If there is a clearly long silent lead-in or tail, the report proposes new start/end timestamps and explains the estimated time saved. It preserves a short lead-in before the first detected words and a short pause after the final words. If transcript timing is unavailable or a trim would make the clip too short, it recommends keeping the original timestamps.
+
+These are manual suggestions only: the renderer does not apply them, overwrite the source, or change the selected clips. Check suggested cut points in an editor before using them. Transcript timestamps can be imperfect, and the helper cannot understand visual context, music, sound effects, or whether a pause is intentionally funny.
