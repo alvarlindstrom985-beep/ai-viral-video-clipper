@@ -44,5 +44,13 @@ class ClipSimilarityTests(unittest.TestCase):
         self.assertGreater(result["overlap_ratio"], 0.8)
 
 
+class RenderQualityTests(unittest.TestCase):
+    def test_missing_render_is_rejected(self):
+        from pathlib import Path
+        from app.main import inspect_render_quality
+        result = inspect_render_quality(Path('/missing-quality-test.mp4'), 30, 1080, 1920)
+        self.assertFalse(result['passed'])
+
+
 if __name__ == "__main__":
     unittest.main()
