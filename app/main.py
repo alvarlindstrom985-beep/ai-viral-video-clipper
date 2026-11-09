@@ -1219,6 +1219,145 @@ def health():
     }
 
 
+STORAGE_WARNING_PERCENT = 85
+MIN_FREE_DISK_BYTES = 512 * 1024 * 1024
+DEFAULT_OUTPUT_RETENTION_DAYS = 30
+DEFAULT_UPLOAD_RETENTION_DAYS = 30
+
+
+def _protected_storage_prefixes():
+    """Keep source and output files needed by queued, running, or recoverable batches."""
+    protected = set()
+    for state in BATCH_JOBS.values():
+        if state.get("status") in {"queued", "running", "interrupted", "failed"}:
+            for key in ("batch_id", "job_id"):
+                value = str(state.get(key, ""))
+                if re.fullmatch(r"[a-f0-9]{12}", value):
+                    protected.add(value)
+    return protected
+
+
+def storage_cleanup_candidates(output_age_days=DEFAULT_OUTPUT_RETENTION_DAYS,
+                               upload_age_days=DEFAULT_UPLOAD_RETENTION_DAYS,
+                               now=None):
+    """Return only known generated files older than retention limits; never delete unknown files."""
+    now = time.time() if now is None else now
+    output_cutoff = now - max(1, int(output_age_days)) * 86400
+    upload_cutoff = now - max(1, int(upload_age_days)) * 86400
+    protected = _protected_storage_prefixes()
+    candidates = []
+    for path in OUTPUTS.iterdir():
+        if not path.is_file() or path.name in {"performance.json", "batch_jobs.sqlite3"}:
+            continue
+        match = re.match(r"^([a-f0-9]{12})(?:_|\.zip$)", path.name)
+        if not match or match.group(1) in protected:
+            continue
+        try:
+            if path.stat().st_mtime <= output_cutoff:
+                candidates.append({"path": path, "area": "outputs", "reason": "Gammal exporterad fil"})
+        except OSError:
+            continue
+    for path in UPLOADS.iterdir():
+        if not path.is_file() or path.suffix.lower() not in ALLOWED_SUFFIXES:
+            continue
+        match = re.fullmatch(r"([a-f0-9]{12})\.[a-z0-9]+", path.name, re.IGNORECASE)
+        if not match or match.group(1).lower() in protected:
+            continue
+        try:
+            if path.stat().st_mtime <= upload_cutoff:
+                candidates.append({"path": path, "area": "uploads", "reason": "Gammal källvideo"})
+        except OSError:
+            continue
+    return candidates
+
+
+def storage_status():
+    disk = shutil.disk_usage(ROOT)
+    upload_bytes = sum(p.stat().st_size for p in UPLOADS.iterdir() if p.is_file())
+    output_bytes = sum(p.stat().st_size for p in OUTPUTS.iterdir() if p.is_file())
+    used_percent = round((disk.used / disk.total) * 100, 1) if disk.total else 0
+    candidates = storage_cleanup_candidates()
+    reclaimable = sum(item["path"].stat().st_size for item in candidates if item["path"].exists())
+    warnings = []
+    if used_percent >= STORAGE_WARNING_PERCENT:
+        warnings.append(f"Disken är {used_percent}% full. Rensa gamla filer eller frigör mer utrymme.")
+    if disk.free < MIN_FREE_DISK_BYTES:
+        warnings.append("Lite ledigt diskutrymme. Nya uppladdningar och batcher kan stoppas.")
+    return {
+        "disk_total_bytes": disk.total,
+        "disk_free_bytes": disk.free,
+        "disk_used_percent": used_percent,
+        "uploads_bytes": upload_bytes,
+        "outputs_bytes": output_bytes,
+        "cleanup_preview_count": len(candidates),
+        "cleanup_preview_bytes": reclaimable,
+        "output_retention_days": DEFAULT_OUTPUT_RETENTION_DAYS,
+        "upload_retention_days": DEFAULT_UPLOAD_RETENTION_DAYS,
+        "minimum_free_reserve_bytes": MIN_FREE_DISK_BYTES,
+        "warnings": warnings
+    }
+
+
+@app.get("/api/storage")
+def get_storage_status():
+    return storage_status()
+
+
+@app.post("/api/storage/cleanup")
+def cleanup_old_storage(dry_run: bool = True):
+    candidates = storage_cleanup_candidates()
+    preview = [
+        {"filename": item["path"].name, "area": item["area"],
+         "size_bytes": item["path"].stat().st_size, "reason": item["reason"]}
+        for item in candidates if item["path"].exists()
+    ]
+    if dry_run:
+        return {"dry_run": True, "candidates": preview, "deleted_count": 0,
+                "deleted_bytes": 0, "storage": storage_status()}
+    deleted_count = 0
+    deleted_bytes = 0
+    errors = []
+    for item in candidates:
+        path = item["path"]
+        try:
+            size = path.stat().st_size
+            path.unlink()
+            deleted_count += 1
+            deleted_bytes += size
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            errors.append(f"{path.name}: {exc}")
+    return {
+        "dry_run": False, "candidates": preview,
+        "deleted_count": deleted_count, "deleted_bytes": deleted_bytes,
+        "errors": errors, "storage": storage_status()
+    }
+
+
+def ensure_upload_space(required_bytes=0):
+    free_bytes = shutil.disk_usage(UPLOADS).free
+    if free_bytes - max(0, int(required_bytes)) < MIN_FREE_DISK_BYTES:
+        raise HTTPException(
+            507,
+            "För lite ledigt diskutrymme. Rensa gamla filer eller frigör utrymme innan du laddar upp."
+        )
+
+
+def estimate_batch_storage_bytes(source: Path, duration: float, short_count: int,
+                                 long_count: int, short_length: int, long_length: int,
+                                 variants: int = 3):
+    """Conservative estimate from source bitrate and requested total render duration."""
+    if duration <= 0 or not source.is_file():
+        return MIN_FREE_DISK_BYTES
+    requested_seconds = variants * (
+        short_count * short_length + long_count * long_length
+    )
+    source_bytes_per_second = source.stat().st_size / duration
+    estimate = int(source_bytes_per_second * requested_seconds * 0.75)
+    return max(128 * 1024 * 1024, estimate)
+
+
 @app.post("/api/upload")
 async def upload_video(video: UploadFile = File(...)):
     suffix = Path(video.filename or "video.mp4").suffix.lower()
@@ -1230,12 +1369,14 @@ async def upload_video(video: UploadFile = File(...)):
     try:
         with source.open("wb") as target:
             while chunk := await video.read(1024 * 1024):
-                size += len(chunk)
-                if size > MAX_UPLOAD_BYTES:
-                    target.close()
-                    source.unlink(missing_ok=True)
+                if size + len(chunk) > MAX_UPLOAD_BYTES:
                     raise HTTPException(413, "Video is larger than the 2 GB upload limit")
+                ensure_upload_space(len(chunk))
+                size += len(chunk)
                 target.write(chunk)
+    except Exception:
+        source.unlink(missing_ok=True)
+        raise
     finally:
         await video.close()
     return {"job_id": job_id, "filename": source.name, "size_bytes": size}
@@ -1608,8 +1749,16 @@ def create_daily_batch(
         raise HTTPException(400, "Invalid caption mode")
     if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
         raise HTTPException(500, "Install FFmpeg and make sure ffmpeg/ffprobe are on PATH")
-    if not list(UPLOADS.glob(f"{job_id}.*")):
+    source_matches = list(UPLOADS.glob(f"{job_id}.*"))
+    if not source_matches:
         raise HTTPException(404, "Video not found")
+    source = source_matches[0]
+    source_duration = get_duration(source)
+    estimated_output = estimate_batch_storage_bytes(
+        source, source_duration, short_count, long_count,
+        short_length, long_length, variants
+    )
+    ensure_upload_space(estimated_output)
 
     batch_id = uuid.uuid4().hex[:12]
     BATCH_JOBS[batch_id] = {
