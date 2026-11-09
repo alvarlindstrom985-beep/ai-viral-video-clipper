@@ -58,3 +58,12 @@ Run a batch by uploading a source video in the dashboard. The API endpoint is `P
 
 ## Important limitations
 This is an early MVP, not a trained viral prediction model. It does not visually understand GTA gameplay or reliably detect specific events such as kills, crashes, or mission completions. It creates separate SRT subtitle files when speech transcription is available; captions are not yet burned into the video. Streamer-humor and visual signals are heuristics, not true emotion recognition; sarcasm, facial expressions, webcam layout, visual jokes, and context can be missed. Scores should be reviewed before posting. Only upload videos you own or have permission to use.
+
+
+## Twitch live monitoring (read-only)
+
+The dashboard can check up to 20 Twitch channel logins using Twitch's official Helix API. Configure these server environment variables using a Twitch developer application:
+- `TWITCH_CLIENT_ID`
+- `TWITCH_CLIENT_SECRET`
+
+The browser refreshes live status every 60 seconds while the dashboard is open and monitoring is enabled. This is browser-session monitoring, not a persistent 24/7 background service. The integration only displays live status, stream title, game, viewer count, and a link to the channel. It does not join chats, record, download, or clip other creators' streams. Use only source recordings/VODs you own or have permission to process. Keep the client secret on the server; never put it in frontend code.
