@@ -105,3 +105,8 @@ This is a heuristic signal, not reliable emotion recognition: transcription can 
 The dashboard includes a manual YouTube Studio metrics tracker. Add a published video's format, content category, edit variant, views, engaged views, Shorts "stayed to watch", average view duration, average percentage viewed, long-form CTR, likes, comments, shares, and subscribers gained. The app stores entries in `outputs/performance.json` and compares category and edit-variant averages. It only shows a leading category or variant after at least three entries in that group.
 
 The comparison score is an internal heuristic, not a viral prediction. For useful comparisons, record metrics at roughly the same age after publishing (for example, after 48 hours) and compare Shorts with Shorts and long-form videos with long-form videos. This first version is manual; it does not connect to a Google account or import YouTube Analytics automatically.
+
+
+### Cautious feedback-based ranking
+
+Once at least three results exist for a category within the same format (Shorts or long-form), future candidate scores receive a small adjustment based on that category's average historical performance score. The adjustment is capped at ±5 points and is shown in the highlight report/dashboard. This is a lightweight heuristic, not model training; it should not be trusted as a causal conclusion from small or mismatched samples.
