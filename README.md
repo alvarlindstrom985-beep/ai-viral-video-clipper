@@ -43,5 +43,18 @@ pip install -r requirements-vision.txt
 
 The visual pass samples frames and uses basic face/smile detectors. It is only a rough signal: it can miss webcam overlays, mistake facial patterns for smiles, and cannot understand jokes, sarcasm, or emotions reliably.
 
+## Daily batch exports (manual publishing)
+
+The batch endpoint creates up to 25 unique Shorts and 5 unique longer videos from one uploaded source. Each selected moment is exported in three edit variants, for up to 90 files total:
+- Variant 1: clean fade-in and original audio
+- Variant 2: brief brightness/contrast intro effect and loudness-normalized audio
+- Variant 3: brief color intro effect and compressed/boosted audio
+
+Shorts are rendered vertically at 1080 × 1920. Longer videos are rendered in 16:9 at 1920 × 1080. The default UI settings use 30-second Shorts and 3-minute longer videos. You can adjust the counts and durations in the dashboard.
+
+Run a batch by uploading a source video in the dashboard. The API endpoint is `POST /api/batch/{job_id}`. The app selects non-overlapping moments where enough source footage is available. If the recording is too short, it creates fewer unique clips instead of pretending it made the full batch. Rendering up to 90 files can take a long time and requires enough disk space and processing power.
+
+**Manual publishing only:** this app does not connect to YouTube, TikTok, or Instagram and does not upload or publish anything. Every export is a draft for you to review and post yourself. The three audio variants use different audio processing; they do not add licensed or external music tracks.
+
 ## Important limitations
 This is an early MVP, not a trained viral prediction model. It does not visually understand GTA gameplay or reliably detect specific events such as kills, crashes, or mission completions. It creates separate SRT subtitle files when speech transcription is available; captions are not yet burned into the video. Streamer-humor and visual signals are heuristics, not true emotion recognition; sarcasm, facial expressions, webcam layout, visual jokes, and context can be missed. Scores should be reviewed before posting. Only upload videos you own or have permission to use.
