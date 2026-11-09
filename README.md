@@ -140,7 +140,7 @@ Future candidate scores compare category results inside publication-age cohorts 
 
 ## Optional AI clip reviewer (vision + transcript)
 
-A second-pass reviewer can inspect up to three sampled still frames (opening, middle, ending) plus the available speech transcript for each selected highlight. It returns separate editorial scores for the hook, clarity, visual interest, payoff, and story coherence, along with strengths, weaknesses, and one suggested edit. It is a review aid, not a prediction of views or actual audience retention.
+A second-pass reviewer can inspect up to three sampled still frames (opening, middle, ending) plus the available speech transcript for each selected highlight. It returns separate editorial scores for the hook, clarity, visual interest, framing/cropping, composition, overlay clutter, payoff, and story coherence, along with strengths, weaknesses, up to five concrete visual warnings, and one suggested edit. Framing checks look for visibly cut-off or poorly placed subjects; composition checks look for a clear subject and useful image space; overlay-clutter checks assess whether visible text/HUD elements compete with important content. These are visual estimates from three still frames, not full-motion analysis, OCR guarantees, or a prediction of views or actual audience retention.
 
 To enable it, configure these **server-side** environment variables:
 - `OPENAI_API_KEY` — your OpenAI API key
