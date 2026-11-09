@@ -89,6 +89,16 @@
     <p id="performanceStatus" class="muted">Laddar resultat...</p>
     <div id="performanceInsights" class="clips"></div>
     <p class="notice">Tips: jämför gärna statistik efter ungefär samma tid sedan publicering, till exempel efter 48 timmar. För Shorts är Stayed to watch och genomsnittlig visningsprocent särskilt användbara. Inga YouTube-inloggningar eller lösenord behövs.</p>
+    <h2 class="group-title">Titlar och beskrivningar</h2>
+    <p class="muted">Skapa flera redigerbara metadataförslag för ett klipp. Förslagen bygger på din beskrivning och är mallbaserade – kontrollera alltid att de stämmer.</p>
+    <form id="metadataForm" class="settings">
+      <label class="field">Vad händer i klippet?<input name="context" required maxlength="240" placeholder="Exempel: Streamern blir överraskad av en polisjakt"></label>
+      <label class="field">Kategori<select name="category"><option>Rage/ilska</option><option>Stark reaktion</option><option>Humor/skratt</option><option>GTA-händelse</option><option>Annat</option></select></label>
+      <label class="field">Format<select name="format"><option value="short">Shorts</option><option value="long">Längre video</option></select></label>
+      <button type="submit">Skapa titelidéer</button>
+    </form>
+    <p id="metadataStatus" class="muted">Redo att skapa förslag.</p>
+    <div id="metadataResults" class="clips"></div>
     <h2 class="group-title">Twitch – bevaka lives</h2>
     <p class="muted">Skriv Twitch-kanaler med kommatecken. Modellen kontrollerar vilka som är live via Twitchs officiella API.</p>
     <label class="field">Twitch-kanaler
@@ -235,6 +245,35 @@ button.addEventListener('click',async()=>{
     await pollBatch(queued.batch_id);
   }catch(error){statusEl.textContent=error.message}
   finally{button.disabled=false}
+});
+
+const metadataForm=document.querySelector('#metadataForm');
+const metadataStatus=document.querySelector('#metadataStatus');
+const metadataResults=document.querySelector('#metadataResults');
+metadataForm.addEventListener('submit',async event=>{
+  event.preventDefault();metadataStatus.textContent='Skapar förslag...';metadataResults.innerHTML='';
+  try{
+    const values=Object.fromEntries(new FormData(metadataForm).entries());
+    const response=await fetch('/api/metadata',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(values)});
+    const data=await response.json();if(!response.ok)throw new Error(data.detail||'Kunde inte skapa förslag');
+    const titleHeading=document.createElement('h3');titleHeading.textContent='Titelidéer';metadataResults.append(titleHeading);
+    data.titles.forEach((value,index)=>{
+      const item=document.createElement('article');item.className='clip';
+      const label=document.createElement('strong');label.textContent='Förslag '+(index+1);
+      const title=document.createElement('p');title.textContent=value;
+      const copy=document.createElement('button');copy.type='button';copy.textContent='Kopiera titel';
+      copy.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(value);metadataStatus.textContent='Titeln kopierades.'}catch(error){metadataStatus.textContent='Markera och kopiera titeln manuellt.'}});
+      item.append(label,title,copy);metadataResults.append(item);
+    });
+    const desc=document.createElement('article');desc.className='clip';
+    const descTitle=document.createElement('strong');descTitle.textContent='Beskrivning';
+    const descText=document.createElement('p');descText.textContent=data.description;
+    const tags=document.createElement('p');tags.textContent=data.hashtags.join(' ');
+    const copyDesc=document.createElement('button');copyDesc.type='button';copyDesc.textContent='Kopiera beskrivning och hashtags';
+    copyDesc.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(data.description+'\\n\\n'+tags.textContent);metadataStatus.textContent='Beskrivningen kopierades.'}catch(error){metadataStatus.textContent='Markera och kopiera texten manuellt.'}});
+    desc.append(descTitle,descText,tags,copyDesc);metadataResults.append(desc);
+    metadataStatus.textContent=data.note;
+  }catch(error){metadataStatus.textContent=error.message}
 });
 
 const performanceForm=document.querySelector('#performanceForm');
