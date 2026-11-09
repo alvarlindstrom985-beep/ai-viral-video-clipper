@@ -247,11 +247,12 @@ async function pollBatch(batchId){
         const payoff=document.createElement('p');payoff.className='muted';payoff.textContent='Payoff mot slutet: '+(moment.payoff_score||0)+' poäng';
         const payoffTiming=document.createElement('p');payoffTiming.className='muted';payoffTiming.textContent='Payoff-tajming: '+((moment.payoff_timing_score>0?'+':'')+(moment.payoff_timing_score||0))+' poäng'+(moment.payoff_timing_reason?' · '+moment.payoff_timing_reason:'')+(moment.payoff_position!==null&&moment.payoff_position!==undefined?' · '+Math.round(moment.payoff_position*100)+' % in i klippet':'');
         const boundary=document.createElement('p');boundary.className='muted';boundary.textContent='Klippgränser: '+(moment.boundary_quality_score>0?'+':'')+(moment.boundary_quality_score||0)+' poäng'+((moment.boundary_quality_reasons||[]).length?' · '+moment.boundary_quality_reasons.join(', '):'');
+        const storyline=document.createElement('p');storyline.className='muted';storyline.textContent='Händelsekedja: '+(moment.storyline_label||'ingen tydlig händelsekedja')+' · '+(moment.storyline_score||0)+' poäng';
         const learning=document.createElement('p');learning.className='muted';learning.textContent='Lärandejustering: '+(moment.learning_bonus||0)+' poäng';
         const ragePhrases=document.createElement('p');ragePhrases.className='muted';ragePhrases.textContent=(moment.rage_phrases||[]).length?'Uppfattade uttryck: '+moment.rage_phrases.join(', '):'Ingen tydlig rage-fras hittades';
         const reason=document.createElement('p');reason.className='muted';reason.textContent=moment.reason;
         const excerpt=document.createElement('p');excerpt.className='muted';excerpt.textContent=moment.transcript_excerpt||'Inget transkript tillgängligt.';
-        card.append(label,timing,score,selection,retention,retentionReasons,aiReviewScore,aiSubscores,aiReviewDetails,hookTitle,hookList,editTitle,editTiming,editNotes,hook,pacing,diversity,payoff,payoffTiming,boundary,rage,learning,ragePhrases,reason,excerpt);highlightGrid.append(card);
+        card.append(label,timing,score,selection,retention,retentionReasons,aiReviewScore,aiSubscores,aiReviewDetails,hookTitle,hookList,editTitle,editTiming,editNotes,hook,pacing,diversity,payoff,payoffTiming,boundary,storyline,rage,learning,ragePhrases,reason,excerpt);highlightGrid.append(card);
       });
       resultsEl.insertBefore(highlightGrid,report);
       let summary='Klart! '+state.created.files+' filer klarade teknisk kvalitetskontroll. '+(state.quality_rejected||0)+' exporter underkändes och togs bort. Allt är redo för manuell granskning före publicering.';
