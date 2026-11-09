@@ -6,7 +6,7 @@ from app.main import inspect_ass_layout
 
 
 def ass_document(width=1080, height=1920, font_size=58, margin_l=70,
-                 margin_r=70, margin_v=150, text="A short caption"):
+                 margin_r=70, margin_v=245, text="A short caption"):
     return "\n".join([
         "[Script Info]", f"PlayResX: {width}", f"PlayResY: {height}",
         "[V4+ Styles]",
@@ -50,6 +50,16 @@ class SubtitleLayoutTests(unittest.TestCase):
             path.write_text(ass_document(margin_v=80), encoding="utf-8")
             result = inspect_ass_layout(path, 1080, 1920)
         self.assertTrue(any("nedre gränssnittszonen" in warning for warning in result["warnings"]))
+
+    def test_explicit_ass_position_in_bottom_safe_zone_is_reported(self):
+        document = ass_document().replace(
+            "A short caption", "{\\pos(540,1800)}A short caption"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "captions.ass"
+            path.write_text(document, encoding="utf-8")
+            result = inspect_ass_layout(path, 1080, 1920)
+        self.assertTrue(any("explicit position i nedre" in warning for warning in result["warnings"]))
 
     def test_top_hook_too_close_to_edge_is_reported(self):
         document = ass_document(margin_v=30).replace(
