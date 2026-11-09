@@ -1,6 +1,7 @@
 import unittest
+from unittest.mock import patch
 
-from app.main import normalize_csv_header, parse_csv_metric, candidate_similarity, is_near_duplicate, retention_signal_score, normalize_ai_review
+from app.main import normalize_csv_header, parse_csv_metric, candidate_similarity, is_near_duplicate, retention_signal_score, normalize_ai_review, learning_group_score, learned_category_bonus
 
 
 class YouTubeCsvMetricTests(unittest.TestCase):
@@ -18,6 +19,44 @@ class YouTubeCsvMetricTests(unittest.TestCase):
 
     def test_swedish_header_normalization(self):
         self.assertEqual(normalize_csv_header("Genomsnittlig visningsprocent (%)"), "genomsnittligvisningsprocent")
+
+
+
+class AdaptiveLearningTests(unittest.TestCase):
+    def test_small_samples_are_shrunk_toward_channel_average(self):
+        estimate = learning_group_score([
+            {"performance_score": 100},
+            {"performance_score": 100},
+            {"performance_score": 100}
+        ], 50, prior_strength=5)
+        self.assertLess(estimate["adjusted_score"], 100)
+        self.assertGreater(estimate["adjusted_score"], 50)
+        self.assertEqual(estimate["confidence"], 0.375)
+
+    def test_more_samples_increase_confidence(self):
+        small = learning_group_score([{"performance_score": 80}] * 3, 50)
+        large = learning_group_score([{"performance_score": 80}] * 20, 50)
+        self.assertGreater(large["confidence"], small["confidence"])
+        self.assertGreater(large["adjusted_score"], small["adjusted_score"])
+
+    def test_category_bonus_is_zero_without_enough_channel_data(self):
+        with patch("app.main.read_performance_entries", return_value=[
+            {"format": "short", "views": 100, "performance_score": 80, "category": "Rage/ilska"}
+        ]):
+            self.assertEqual(learned_category_bonus(["Rage/ilska-signal"], "short"), 0.0)
+
+    def test_category_bonus_is_bounded_and_uses_own_category_results(self):
+        entries = [
+            {"format": "short", "views": 100, "performance_score": 90, "category": "Rage/ilska"}
+            for _ in range(4)
+        ] + [
+            {"format": "short", "views": 100, "performance_score": 40, "category": "Humor/skratt"}
+            for _ in range(4)
+        ]
+        with patch("app.main.read_performance_entries", return_value=entries):
+            bonus = learned_category_bonus(["Rage/ilska-signal"], "short")
+        self.assertGreater(bonus, 0)
+        self.assertLessEqual(abs(bonus), 3.0)
 
 
 class ClipSimilarityTests(unittest.TestCase):
