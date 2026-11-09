@@ -243,7 +243,7 @@ async function pollBatch(batchId){
       else if(state.transcript_available)summary+=' Separata undertextfiler finns i ZIP-filen.';
       else summary+=' Inget transkript kunde skapas, så inga undertexter lades till.';
       if(state.failed_files.length)summary+=' Misslyckade exporter: '+state.failed_files.length+'.';
-      statusEl.textContent=summary;progress.value=100;progressText.textContent='Batchen är klar.';return;
+      statusEl.textContent=summary;progress.value=100;progressText.textContent='Batchen är klar.';await loadBatchHistory();return;
     }
     if(state.status==='failed')throw new Error(state.error||'Batchen misslyckades');
     if(state.status==='interrupted')throw new Error('Batchen avbröts av en serveromstart. Du kan starta om den under Senaste batchjobb.');
@@ -317,7 +317,7 @@ button.addEventListener('click',async()=>{
     const queued=await response.json();if(!response.ok)throw new Error(queued.detail||'Kunde inte starta batchen');
     await pollBatch(queued.batch_id);
   }catch(error){statusEl.textContent=error.message}
-  finally{button.disabled=false}
+  finally{button.disabled=false;await loadBatchHistory()}
 });
 
 const metadataForm=document.querySelector('#metadataForm');
