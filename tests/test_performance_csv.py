@@ -131,5 +131,37 @@ class RenderQualityTests(unittest.TestCase):
         self.assertFalse(result['passed'])
 
 
+class HookOverlayRenderTests(unittest.TestCase):
+    def test_hook_ass_contains_animated_text_and_correct_vertical_layout(self):
+        from app.main import OUTPUTS, write_hook_overlay_ass
+        path = write_hook_overlay_ass(
+            "hookoverlaytest", "short", 1, "v1",
+            {"text": "That was wild!"}, 30
+        )
+        try:
+            content = path.read_text(encoding="utf-8")
+            self.assertIn("PlayResX: 1080", content)
+            self.assertIn("PlayResY: 1920", content)
+            self.assertIn(r"\fad(180,220)", content)
+            self.assertIn("That was wild!", content)
+            self.assertIn("\n[Events]\n", content)
+        finally:
+            path.unlink(missing_ok=True)
+
+    def test_hook_overlay_sanitizes_ass_control_characters(self):
+        from app.main import write_hook_overlay_ass
+        path = write_hook_overlay_ass(
+            "hookoverlaysafe", "long", 1, "v2",
+            {"text": r"Hello {\\pos(0,0)} world"}, 180
+        )
+        try:
+            content = path.read_text(encoding="utf-8")
+            self.assertIn("PlayResX: 1920", content)
+            self.assertNotIn(r"{\\pos(0,0)}", content)
+            self.assertIn("Hello", content)
+        finally:
+            path.unlink(missing_ok=True)
+
+
 if __name__ == "__main__":
     unittest.main()
