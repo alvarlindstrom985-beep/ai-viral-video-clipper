@@ -1648,7 +1648,8 @@ def build_performance_summary(entries):
             "average_score": round(sum(float(item.get("performance_score", 0) or 0) for item in items) / len(items), 2),
             "average_views": round(sum(item.get("views", 0) for item in items) / len(items), 1),
             "average_retention": round(sum(item.get("average_view_percentage", 0) for item in items if item.get("average_view_percentage") is not None) / max(1, sum(1 for item in items if item.get("average_view_percentage") is not None)), 2),
-            "average_stayed": round(sum(item.get("stayed_to_watch_pct", 0) for item in items if item.get("stayed_to_watch_pct") is not None) / max(1, sum(1 for item in items if item.get("stayed_to_watch_pct") is not None)), 2)
+            "average_stayed": round(sum(item.get("stayed_to_watch_pct", 0) for item in items if item.get("stayed_to_watch_pct") is not None) / max(1, sum(1 for item in items if item.get("stayed_to_watch_pct") is not None)), 2),
+            "average_view_duration_sec": round(sum(item.get("average_view_duration_sec", 0) for item in items if item.get("average_view_duration_sec") is not None) / max(1, sum(1 for item in items if item.get("average_view_duration_sec") is not None)), 2)
         })
         baseline = sum(float(item.get("performance_score", 0) or 0) for item in items) / len(items)
         for dimension in ("category", "variant"):
