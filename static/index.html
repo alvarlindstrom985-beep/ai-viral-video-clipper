@@ -33,7 +33,7 @@
     <div><button id="run">Analysera video och skapa klipp</button></div>
     <p id="status">Redo. FFmpeg krävs. Installera tillvalet faster-whisper för talanalys.</p>
     <div id="clips" class="clips"></div>
-    <p class="notice">Analysen prioriterar streamerns humor, skratt och spontana reaktioner. GTA-händelser används som extra signal. Om Whisper är installerat får varje klipp även en separat undertextfil (.srt). Resultaten behöver granskas manuellt – ingen algoritm kan garantera viral spridning.</p>
+    <p class="notice">Analysen prioriterar streamerns humor och reaktioner. Med tillvalet OpenCV letar den även efter ansikten, möjliga leenden och rörelse i videobilden. Om Whisper är installerat får varje klipp även en separat undertextfil (.srt). Resultaten behöver granskas manuellt – ingen algoritm kan garantera viral spridning.</p>
   </section>
 </main>
 <script>
@@ -56,7 +56,7 @@ button.addEventListener('click',async()=>{
       const card=document.createElement('article');card.className='clip';
       const video=document.createElement('video');video.controls=true;video.playsInline=true;video.src=clip.url;
       const label=document.createElement('p');label.textContent='Klipp '+(i+1)+' · start '+clip.start+' s';
-      const score=document.createElement('p');score.className='score';score.textContent='Poäng: '+clip.score+' · Streamer: '+(clip.streamer_score||0)+' · GTA: '+(clip.game_score||0);
+      const score=document.createElement('p');score.className='score';score.textContent='Poäng: '+clip.score+' · Streamer: '+(clip.streamer_score||0)+' · Visuellt: '+(clip.visual_score||0)+' · GTA: '+(clip.game_score||0);
       const reason=document.createElement('p');reason.className='muted';reason.textContent=clip.reason;
       const links=document.createElement('div');links.className='links';
       const link=document.createElement('a');link.className='download';link.href=clip.url;link.download=clip.name;link.textContent='Ladda ner video';
@@ -75,7 +75,7 @@ button.addEventListener('click',async()=>{
       }
       card.append(links);clipsEl.append(card);
     });
-    statusEl.textContent='Klart! Analys: '+result.analysis+'. '+result.note;
+    statusEl.textContent='Klart! Analys: '+result.analysis+'. Visuell analys: '+(result.visual_analysis_available?'aktiv':'inte tillgänglig – installera requirements-vision.txt')+'. '+result.note;
   }catch(error){statusEl.textContent=error.message}
   finally{button.disabled=false}
 });
