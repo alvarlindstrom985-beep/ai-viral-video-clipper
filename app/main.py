@@ -404,6 +404,54 @@ def review_clip_with_ai(source: Path, start: float, end: float, transcript):
         return {"status": "error", "message": "AI-granskningen kunde inte slutföras; exporten fortsätter ändå"}
 
 
+def generate_hook_options(transcript, start: float, end: float):
+    """Create three transcript-grounded opening text hooks; suggestions are never burned into video."""
+    segments = [item for item in (transcript or []) if isinstance(item, dict)
+                and isinstance(item.get("start"), (int, float))
+                and isinstance(item.get("end"), (int, float))
+                and item["end"] > start and item["start"] < end
+                and str(item.get("text", "")).strip()]
+    if not segments:
+        return {"status": "no_transcript", "options": [],
+                "note": "Inget transkript – inga automatiska text-hookar skapades."}
+    def clean_excerpt(value, limit=62):
+        value = re.sub(r"\s+", " ", str(value)).strip(" \t\r\n.,!?;:-")
+        if len(value) <= limit:
+            return value
+        shortened = value[:limit].rsplit(" ", 1)[0].strip(" ,.!?;:-")
+        return shortened + "…"
+    all_text = " ".join(str(item["text"]).strip() for item in segments)
+    first_quote = clean_excerpt(all_text)
+    ranked = sorted(segments, key=lambda item: (
+        min(str(item["text"]).count("!"), 3) * 2
+        + min(str(item["text"]).count("?"), 2)
+        + (3 if any(phrase in str(item["text"]).lower() for phrase in RAGE_PHRASES) else 0)
+        + (2 if any(phrase in str(item["text"]).lower() for phrase in STREAMER_REACTION_PHRASES) else 0)
+        + (2 if any(phrase in str(item["text"]).lower() for phrase in STREAMER_FUNNY_PHRASES) else 0),
+        len(str(item["text"]))
+    ), reverse=True)
+    standout = clean_excerpt(ranked[0]["text"]) if ranked else first_quote
+    later = next((clean_excerpt(item["text"]) for item in segments
+                  if float(item["start"]) > float(segments[0]["start"]) + 1.0
+                  and clean_excerpt(item["text"]) and clean_excerpt(item["text"]) != first_quote), "")
+    candidates = [
+        {"style": "Direkt citat", "text": "”" + first_quote + "”",
+         "reason": "Använder en faktisk replik från klippets början."},
+        {"style": "Reaktionsdriven", "text": "Reaktionen: ”" + standout + "”",
+         "reason": "Lyfter fram den mest uttrycksfulla transkriberade repliken."},
+        {"style": "Nyfikenhet", "text": ("Vad händer efter: ”" + first_quote + "”?" if later else "Lyssna på den här repliken: ”" + standout + "”"),
+         "reason": "Skapar en öppen krok utan att hitta på vad som händer i videon."}
+    ]
+    unique = []
+    seen = set()
+    for item in candidates:
+        key = item["text"].casefold()
+        if item["text"].strip("” ") and key not in seen:
+            unique.append(item)
+            seen.add(key)
+    return {"status": "generated" if unique else "no_transcript", "options": unique[:3],
+            "note": "Textförslag baserade på transkriptet – välj och lägg in manuellt i din videoredigerare."}
+
 def suggest_edit_points(start: float, end: float, transcript, media_format: str = "short"):
     """Suggest conservative manual trims from transcript timing; never changes the rendered clip."""
     duration = max(0.0, end - start)
@@ -1126,6 +1174,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     if item["end"] >= candidate["start"] and item["start"] <= candidate["start"] + clip_duration
                 ]
                 edit_suggestions = suggest_edit_points(candidate["start"], candidate["start"] + clip_duration, transcript, media_type)
+                hook_options = generate_hook_options(transcript, candidate["start"], candidate["start"] + clip_duration)
                 highlights.append({
                     "type": media_type,
                     "number": index,
@@ -1150,7 +1199,8 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     "rage_phrases": candidate["rage_phrases"],
                     "transcript_excerpt": " ".join(nearby_text)[:1200],
                     "ai_review": ai_review,
-                    "edit_suggestions": edit_suggestions
+                    "edit_suggestions": edit_suggestions,
+                    "hook_options": hook_options
                 })
         state["highlights"] = highlights
 
