@@ -474,6 +474,26 @@ function renderPerformance(data){
     variantNote.textContent='Smart variantväljare väntar på minst 3 jämförbara publicerade videor för var och en av V1, V2 och V3 inom samma kategori, format och publiceringsålder.';
     performanceInsights.append(variantNote);
   }
+  const editRecommendations=insights.edit_recommendations||[];
+  if(editRecommendations.length){
+    const editCard=document.createElement('article');editCard.className='clip';
+    const editHeading=document.createElement('h3');editHeading.textContent='Prestationsbaserad redigeringscoach';
+    const editNote=document.createElement('p');editNote.className='muted';
+    editNote.textContent='Jämför bara samma kategori, format och publiceringsålder. Minst 3 videor per variant och mätvärde krävs. Mönster är vägledning, inte bevis för orsak.';
+    editCard.append(editHeading,editNote);
+    editRecommendations.slice(0,10).forEach(item=>{
+      const line=document.createElement('p');line.className='score';
+      line.textContent=item.category+' · '+(item.format==='short'?'Shorts':'Längre video')+' · '+item.age_cohort+' · '+item.focus+': '+item.recommended_variant.toUpperCase();
+      const detail=document.createElement('p');detail.className='muted';
+      detail.textContent=item.message+' Skillnad mot tvåan: '+item.margin+' · V1 '+item.variant_values.v1+' / V2 '+item.variant_values.v2+' / V3 '+item.variant_values.v3+' · minst '+item.minimum_samples+' mätvärden per variant.';
+      editCard.append(line,detail);
+    });
+    performanceInsights.append(editCard);
+  }else{
+    const editNote=document.createElement('p');editNote.className='muted';
+    editNote.textContent='Redigeringscoachen väntar på minst 3 jämförbara publicerade videor per variant och mätvärde. Lägg in YouTube-statistik för att låsa upp konkreta råd om hook, retention och delningar.';
+    performanceInsights.append(editNote);
+  }
   if((insights.age_cohorts||[]).length){
     const ageCard=document.createElement('article');ageCard.className='clip';
     const ageHeading=document.createElement('h3');ageHeading.textContent='Jämförelser vid samma publiceringsålder';
