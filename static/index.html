@@ -232,7 +232,7 @@ async function pollBatch(batchId){
         const ragePhrases=document.createElement('p');ragePhrases.className='muted';ragePhrases.textContent=(moment.rage_phrases||[]).length?'Uppfattade uttryck: '+moment.rage_phrases.join(', '):'Ingen tydlig rage-fras hittades';
         const reason=document.createElement('p');reason.className='muted';reason.textContent=moment.reason;
         const excerpt=document.createElement('p');excerpt.className='muted';excerpt.textContent=moment.transcript_excerpt||'Inget transkript tillgängligt.';
-        card.append(label,timing,score,retention,retentionReasons,aiReviewScore,aiSubscores,aiReviewDetails,hookTitle,hookList,editTitle,editTiming,editNotes,hook,pacing,diversity,payoff,rage,learning,ragePhrases,reason,excerpt);highlightGrid.append(card);
+        card.append(label,timing,score,selection,retention,retentionReasons,aiReviewScore,aiSubscores,aiReviewDetails,hookTitle,hookList,editTitle,editTiming,editNotes,hook,pacing,diversity,payoff,rage,learning,ragePhrases,reason,excerpt);highlightGrid.append(card);
       });
       resultsEl.insertBefore(highlightGrid,report);
       let summary='Klart! '+state.created.files+' filer klarade teknisk kvalitetskontroll. '+(state.quality_rejected||0)+' exporter underkändes och togs bort. Allt är redo för manuell granskning före publicering.';
