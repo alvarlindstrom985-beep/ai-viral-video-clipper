@@ -576,7 +576,7 @@ def inspect_ass_layout(path: Path, expected_width: int, expected_height: int):
                 )
 
         # Explicit positioning overrides the style anchor.
-        position = re.search(r"\\\\pos\\(([-0-9.]+),([-0-9.]+)\\)", event_text)
+        position = re.search(r"\\pos\(([-0-9.]+),([-0-9.]+)\)", event_text)
         if position:
             try:
                 pos_y = float(position.group(2))
