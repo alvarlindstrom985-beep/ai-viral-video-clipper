@@ -18,6 +18,8 @@ import unicodedata
 import io
 import os
 import time
+import sqlite3
+import threading
 from datetime import datetime, timezone
 import urllib.parse
 import urllib.request
@@ -237,6 +239,65 @@ def ffmpeg_subtitle_filter(subtitle_path: Path, style: str, media_type: str):
     return f"subtitles=filename='{path}':force_style='{selected_style}'"
 
 BATCH_JOBS = {}
+BATCH_DB_FILE = OUTPUTS / "batch_jobs.sqlite3"
+_BATCH_DB_LOCK = threading.RLock()
+
+
+def init_batch_database():
+    BATCH_DB_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with _BATCH_DB_LOCK, sqlite3.connect(str(BATCH_DB_FILE), timeout=30) as connection:
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS batch_jobs (
+                batch_id TEXT PRIMARY KEY,
+                state_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        connection.commit()
+
+
+def save_batch_job(batch_id, state):
+    """Persist a JSON-safe snapshot of a batch job."""
+    init_batch_database()
+    snapshot = json.dumps(state, ensure_ascii=False, default=str)
+    updated_at = datetime.now(timezone.utc).isoformat()
+    with _BATCH_DB_LOCK, sqlite3.connect(str(BATCH_DB_FILE), timeout=30) as connection:
+        connection.execute(
+            """INSERT INTO batch_jobs(batch_id, state_json, updated_at)
+               VALUES (?, ?, ?)
+               ON CONFLICT(batch_id) DO UPDATE SET
+                   state_json=excluded.state_json, updated_at=excluded.updated_at""",
+            (batch_id, snapshot, updated_at)
+        )
+        connection.commit()
+    state["updated_at"] = updated_at
+
+
+def restore_batch_jobs():
+    """Restore saved jobs and mark work interrupted by a process restart."""
+    init_batch_database()
+    with _BATCH_DB_LOCK, sqlite3.connect(str(BATCH_DB_FILE), timeout=30) as connection:
+        rows = connection.execute(
+            "SELECT batch_id, state_json FROM batch_jobs ORDER BY updated_at DESC"
+        ).fetchall()
+    for batch_id, state_json in rows:
+        try:
+            state = json.loads(state_json)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if not isinstance(state, dict):
+            continue
+        if state.get("status") in {"queued", "running"}:
+            state["status"] = "interrupted"
+            state["stage"] = "Avbrutet av serveromstart"
+            state["error"] = "Servern startades om innan batchen blev klar. Du kan försöka starta om jobbet."
+            state["recovered_after_restart"] = True
+            save_batch_job(batch_id, state)
+        BATCH_JOBS[batch_id] = state
+
+
+restore_batch_jobs()
+
 
 TWITCH_APP_TOKEN = {"value": None, "expires_at": 0}
 
@@ -1261,6 +1322,8 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
     """Background worker. Progress is updated after each real export attempt."""
     state = BATCH_JOBS[batch_id]
     state["status"] = "running"
+    state["stage"] = "Startar batch"
+    save_batch_job(batch_id, state)
     try:
         matches = list(UPLOADS.glob(f"{job_id}.*"))
         if not matches:
@@ -1271,6 +1334,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
             raise RuntimeError("Video is too short to create clips")
 
         state["stage"] = "Analyserar ljud, tal och bild"
+        save_batch_job(batch_id, state)
         levels = audio_levels(source)
         transcript = transcribe_audio(source)
         visual_samples = analyze_visual_reactions(source)
@@ -1347,6 +1411,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     "hook_options": hook_options
                 })
         state["highlights"] = highlights
+        save_batch_job(batch_id, state)
 
         recipes = [
             {"id": "v1", "label": "V1 · Direkt citat-hook · clean",
@@ -1365,6 +1430,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
         ]
         planned = sum(len(candidates) * len(recipes) for _, candidates, _ in groups)
         state.update({"total": planned, "stage": "Renderar videor"})
+        save_batch_job(batch_id, state)
         results, failures = [], []
         quality_checks = []
         for media_type, candidates, clip_duration in groups:
@@ -1418,6 +1484,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     rendered = run_command(command)
                     state["completed"] += 1
                     if rendered.returncode != 0 or not out.exists():
+                        save_batch_job(batch_id, state)
                         failures.append(filename)
                         state["last_error"] = (rendered.stderr or "FFmpeg error")[-500:]
                         continue
@@ -1427,6 +1494,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     if not quality["passed"]:
                         failures.append(filename)
                         out.unlink(missing_ok=True)
+                        save_batch_job(batch_id, state)
                         continue
                     results.append({
                         "name": filename, "url": f"/api/clips/{filename}",
@@ -1443,6 +1511,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                         "hook_style": hook_list[hook_index].get("style") if hook_ass_path else None
                     })
                     state["results"] = results
+                    save_batch_job(batch_id, state)
 
         if not results:
             raise RuntimeError("No videos could be rendered. Check FFmpeg and the source file.")
@@ -1503,8 +1572,10 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
             "caption_mode": caption_mode,
             "note": "All exports are saved as drafts. Nothing is uploaded or published automatically. Variants use different intro effects and audio mastering, not different music tracks."
         })
+        save_batch_job(batch_id, state)
     except Exception as exc:
         state.update({"status": "failed", "stage": "Fel", "error": str(exc)})
+        save_batch_job(batch_id, state)
 
 
 @app.post("/api/batch/{job_id}", status_code=202)
@@ -1545,11 +1616,49 @@ def create_daily_batch(
         "batch_id": batch_id, "job_id": job_id, "status": "queued",
         "stage": "Väntar på start", "completed": 0, "total": 0,
         "results": [], "created": None,
-        "burn_subtitles": burn_subtitles, "subtitle_style": subtitle_style, "caption_mode": caption_mode
+        "short_count": short_count, "long_count": long_count,
+        "short_length": short_length, "long_length": long_length,
+        "burn_subtitles": burn_subtitles, "subtitle_style": subtitle_style,
+        "caption_mode": caption_mode, "variants": variants,
+        "created_at": datetime.now(timezone.utc).isoformat()
     }
+    save_batch_job(batch_id, BATCH_JOBS[batch_id])
     background_tasks.add_task(
         render_batch_job, batch_id, job_id, short_count, long_count, short_length, long_length,
         burn_subtitles, subtitle_style, caption_mode
+    )
+    return {"batch_id": batch_id, "status": "queued", "status_url": f"/api/batch/status/{batch_id}"}
+
+
+@app.post("/api/batch/resume/{batch_id}", status_code=202)
+def resume_batch_job(batch_id: str, background_tasks: BackgroundTasks):
+    """Restart a failed/interrupted batch using its saved source and settings."""
+    if not re.fullmatch(r"[a-f0-9]{12}", batch_id):
+        raise HTTPException(400, "Invalid batch ID")
+    state = BATCH_JOBS.get(batch_id)
+    if not state:
+        raise HTTPException(404, "Batch not found")
+    if state.get("status") not in {"interrupted", "failed"}:
+        raise HTTPException(409, "Only interrupted or failed batches can be restarted")
+    job_id = state.get("job_id", "")
+    if not re.fullmatch(r"[a-f0-9]{12}", job_id) or not list(UPLOADS.glob(f"{job_id}.*")):
+        raise HTTPException(404, "Source video is no longer available")
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        raise HTTPException(500, "Install FFmpeg and make sure ffmpeg/ffprobe are on PATH")
+    state.update({
+        "status": "queued", "stage": "Köad för omstart",
+        "completed": 0, "total": 0, "results": [], "highlights": [],
+        "created": None, "error": None, "last_error": None,
+        "failed_files": [], "quality_checks": []
+    })
+    save_batch_job(batch_id, state)
+    background_tasks.add_task(
+        render_batch_job, batch_id, job_id,
+        int(state.get("short_count", 8)), int(state.get("long_count", 1)),
+        int(state.get("short_length", 30)), int(state.get("long_length", 300)),
+        bool(state.get("burn_subtitles", True)),
+        state.get("subtitle_style", "classic"),
+        state.get("caption_mode", "word_by_word")
     )
     return {"batch_id": batch_id, "status": "queued", "status_url": f"/api/batch/status/{batch_id}"}
 
@@ -1575,7 +1684,10 @@ def get_batch_status(batch_id: str):
         "failed_files": state.get("failed_files", []),
         "quality_checks": state.get("quality_checks", []),
         "quality_passed": state.get("quality_passed", 0),
-        "quality_rejected": state.get("quality_rejected", 0)
+        "quality_rejected": state.get("quality_rejected", 0),
+        "recovered_after_restart": state.get("recovered_after_restart", False),
+        "updated_at": state.get("updated_at"),
+        "can_resume": state.get("status") in {"interrupted", "failed"}
     }
 
 
