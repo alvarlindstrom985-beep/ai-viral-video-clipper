@@ -1614,20 +1614,20 @@ def performance_score(entry):
 def performance_viewer_behavior(items):
     """Return per-video viewer actions normalized to rates per 1,000 views."""
     metrics = {
-        "engaged_views": "engaged_views_pct",
-        "likes": "likes_per_1000_views",
-        "comments": "comments_per_1000_views",
-        "shares": "shares_per_1000_views",
-        "subscribers_gained": "subscribers_gained_per_1000_views"
+        "engaged_views": ("engaged_views_pct", 100.0),
+        "likes": ("likes_per_1000_views", 1000.0),
+        "comments": ("comments_per_1000_views", 1000.0),
+        "shares": ("shares_per_1000_views", 1000.0),
+        "subscribers_gained": ("subscribers_gained_per_1000_views", 1000.0)
     }
     result = {}
-    for source_key, output_key in metrics.items():
+    for source_key, (output_key, scale) in metrics.items():
         rates = []
         for item in items:
             views = float(item.get("views", 0) or 0)
             value = item.get(source_key)
             if views > 0 and value is not None:
-                rates.append(float(value) / views * 1000.0)
+                rates.append(float(value) / views * scale)
         result[output_key] = round(sum(rates) / len(rates), 2) if rates else None
         result[output_key + "_samples"] = len(rates)
     return result
