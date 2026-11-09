@@ -113,7 +113,7 @@ def write_batch_subtitles(batch_id: str, media_type: str, clip_number: int,
     if not lines:
         return None
     subtitle_path = OUTPUTS / f"{batch_id}_{media_type}_{clip_number:02d}.srt"
-    subtitle_path.write_text("\\n".join(lines), encoding="utf-8")
+    subtitle_path.write_text("\n".join(lines), encoding="utf-8")
     return subtitle_path
 
 
@@ -700,9 +700,9 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     subtitle_path = write_batch_subtitles(
                         batch_id, media_type, clip_index, candidate["start"],
                         candidate["start"] + clip_duration, transcript
-                    ) if burn_subtitles else None
+                    )
                     video_filter = framing + "," + recipe["video_filter"]
-                    if subtitle_path:
+                    if subtitle_path and burn_subtitles:
                         video_filter += "," + ffmpeg_subtitle_filter(subtitle_path, subtitle_style, media_type)
                     command = [
                         "ffmpeg", "-y", "-ss", str(candidate["start"]), "-i", str(source),
