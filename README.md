@@ -27,6 +27,10 @@ Batch job state is stored in `outputs/batch_jobs.sqlite3`, including the selecte
 
 Every rendered export is checked with FFprobe for a readable video stream, expected dimensions, expected duration, and an audio stream. FFmpeg then runs advisory diagnostics for long black segments, frozen frames, and the audio peak level. Potentially problematic segments and peaks near 0 dB are shown as warnings on each draft card; they do not automatically reject a clip because dark scenes, intentional pauses, and loud effects can be valid creative choices. A missing audio stream or invalid technical metadata does fail the technical gate. These checks do not assess subtitle placement, story quality, or actual audience retention, so review each exported video manually before publishing.
 
+## Subtitle layout diagnostics
+
+ASS-based karaoke captions and animated hook overlays receive an additional layout check. It compares the subtitle canvas with the output dimensions and checks style font size, horizontal margins, vertical margins, and approximate single-line text width. Findings appear as advisory warnings on the draft; they do not reject exports. This is a metadata/heuristic check, not OCR: it cannot guarantee that captions avoid important gameplay elements or that every font renders exactly as estimated. Review the video itself before publishing.
+
 ## End-to-end render verification
 
 The GitHub Actions test suite installs FFmpeg and runs a real render integration test using a generated synthetic test pattern and tone (not third-party footage). It exercises the batch worker, three edit variants, vertical scaling/cropping, audio encoding, sentence subtitles, animated ASS hook overlays, FFprobe validation, and the ZIP/report export. The test patches analysis/transcription with deterministic test data so it does not download Whisper models or call external AI services. It does not prove quality on arbitrary user recordings; test your own footage locally before publishing.
