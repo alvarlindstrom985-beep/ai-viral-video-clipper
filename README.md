@@ -188,3 +188,8 @@ The three suggestions are generated with local templates and transcript cues; th
 The ranking can now make a small adjustment based on the channel's own saved YouTube results. It maps detected clip signals to the manually assigned performance categories, compares those results within the same format, and applies a bounded bonus or penalty only after at least three examples exist for a category. Small groups are statistically shrunk toward the format-wide average, and the dashboard displays the adjusted comparison and a confidence indicator. Variant/category recommendations also use this confidence-adjusted score.
 
 The smart variant selector recommends V1, V2, or V3 only when each has at least three results in the same category, format, and publication-age cohort. It compares confidence-adjusted scores and shows the margin and sample counts; it does not silently remove the other variants or publish anything. This is lightweight adaptive calibration, not a trained machine-learning model or a viral-view prediction. The adjustment is deliberately capped at 3 ranking points, and results are more useful when videos are compared at similar ages and with enough samples.
+
+
+### Klippgränser och reaktionsupptakt
+
+Urvalet väger nu även in om ett klipp riskerar att börja eller sluta mitt i ett transkriberat ord/segment. Det ger en mindre poängjustering och visar en varning i dashboarden. Om en upptäckt reaktionsankare har ungefär 1–6 sekunders upptakt inne i klippet kan modellen ge en liten bonus; reaktioner som börjar nästan direkt vid klippets start kan få avdrag. Detta är en heuristik baserad på transkriptets tidsstämplar och upptäckta ankare, inte en garanti för perfekt klippning. Granska alltid klippgränserna manuellt.
