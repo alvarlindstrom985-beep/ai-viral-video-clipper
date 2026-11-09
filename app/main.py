@@ -179,6 +179,49 @@ def write_word_karaoke_ass(batch_id: str, media_type: str, clip_number: int,
     path.write_text("\n".join(ass) + "\n", encoding="utf-8")
     return path
 
+
+
+def write_hook_overlay_ass(batch_id: str, media_type: str, clip_number: int, variant_id: str, hook_option, clip_duration: float):
+    """Create an animated, top-positioned ASS hook overlay for the first 2.6 seconds."""
+    if not isinstance(hook_option, dict) or not str(hook_option.get("text", "")).strip():
+        return None
+    text = re.sub(r"\\s+", " ", str(hook_option["text"])).strip()
+    # ASS override blocks must not be injectable through transcript text.
+    text = text.replace("\\", "").replace("{", "(").replace("}", ")").replace("\\n", " ")
+    text = text.replace("\r", " ").replace("\n", " ")[:150]
+    if not text:
+        return None
+    width, height = (1080, 1920) if media_type == "short" else (1920, 1080)
+    font_size = 70 if media_type == "short" else 54
+    margin_v = 245 if media_type == "short" else 100
+    ass = [
+        "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {width}", f"PlayResY: {height}",
+        "WrapStyle: 2", "ScaledBorderAndShadow: yes", "",
+        "[V4+ Styles]",
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+        f"Style: Hook,Arial,{font_size},&H00FFFFFF,&H0000D7FF,&H00000000,&H80000000,1,0,1,5,2,8,70,70,{margin_v},1",
+        "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
+    ]
+    end_time = min(2.8, max(1.2, float(clip_duration)))
+    def ass_time(seconds):
+        total_cs = max(0, int(round(seconds * 100)))
+        hours, rem = divmod(total_cs, 360000)
+        minutes, rem = divmod(rem, 6000)
+        secs, cs = divmod(rem, 100)
+        return f"{hours}:{minutes:02}:{secs:02}.{cs:02}"
+    # Fade + subtle scale-up gives the hook a clear entrance without covering the full clip.
+    animated_text = r"{\\fad(180,220)\\fscx94\\fscy94\\t(0,420,\\fscx100\\fscy100)}" + text
+    ass.append(f"Dialogue: 1,0:00:00.00,{ass_time(end_time)},Hook,,0,0,0,,{animated_text}")
+    path = OUTPUTS / f"{batch_id}_{media_type}_{clip_number:02d}_{variant_id}_hook.ass"
+    path.write_text("\\n".join(ass) + "\\n", encoding="utf-8")
+    return path
+
+
+def ffmpeg_ass_filter(subtitle_path: Path):
+    """Build an FFmpeg subtitles filter for a generated ASS overlay."""
+    path = subtitle_path.resolve().as_posix().replace(":", r"\\:").replace("'", r"\\'")
+    return f"subtitles=filename='{path}'"
+
 def ffmpeg_subtitle_filter(subtitle_path: Path, style: str, media_type: str):
     """Build a safely escaped FFmpeg subtitles filter using a fixed style allowlist."""
     styles = {
@@ -1205,13 +1248,13 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
         state["highlights"] = highlights
 
         recipes = [
-            {"id": "v1", "label": "Clean intro · original audio",
-             "video_filter": "fade=t=in:st=0:d=0.55", "audio_filter": None},
-            {"id": "v2", "label": "Flash intro · normalized audio",
-             "video_filter": "eq=brightness=0.07:contrast=1.12:enable='between(t,0,1.1)',fade=t=in:st=0:d=0.25",
+            {"id": "v1", "label": "V1 · Direkt citat-hook · clean",
+             "hook_index": 0, "video_filter": "fade=t=in:st=0:d=0.55", "audio_filter": None},
+            {"id": "v2", "label": "V2 · Reaktions-hook · flash",
+             "hook_index": 1, "video_filter": "eq=brightness=0.07:contrast=1.12:enable='between(t,0,1.1)',fade=t=in:st=0:d=0.25",
              "audio_filter": "loudnorm=I=-16:TP=-1.5:LRA=11"},
-            {"id": "v3", "label": "Color intro · compressed audio",
-             "video_filter": "hue=h=8:s=1.18:enable='between(t,0,1.4)',fade=t=in:st=0:d=0.4",
+            {"id": "v3", "label": "V3 · Nyfikenhets-hook · color",
+             "hook_index": 2, "video_filter": "hue=h=8:s=1.18:enable='between(t,0,1.4)',fade=t=in:st=0:d=0.4",
              "audio_filter": "acompressor=threshold=0.089:ratio=2:attack=20:release=250,volume=1.15"}
         ]
 
@@ -1252,6 +1295,17 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     video_filter = framing + "," + recipe["video_filter"]
                     if subtitle_path and burn_subtitles:
                         video_filter += "," + ffmpeg_subtitle_filter(subtitle_path, subtitle_style, media_type)
+                    hook_options = generate_hook_options(transcript, candidate["start"], candidate["start"] + clip_duration)
+                    hook_list = hook_options.get("options", [])
+                    hook_index = recipe["hook_index"]
+                    hook_ass_path = None
+                    if hook_index < len(hook_list):
+                        hook_ass_path = write_hook_overlay_ass(
+                            batch_id, media_type, clip_index, recipe["id"],
+                            hook_list[hook_index], clip_duration
+                        )
+                    if hook_ass_path:
+                        video_filter += "," + ffmpeg_ass_filter(hook_ass_path)
                     command = [
                         "ffmpeg", "-y", "-ss", str(candidate["start"]), "-i", str(source),
                         "-t", str(clip_duration), "-vf", video_filter,
@@ -1283,7 +1337,9 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                         "score": round(candidate["score"], 2),
                         "rage_score": candidate["rage_score"],
                         "reason": candidate["reason"], "categories": candidate["categories"],
-                        "subtitles_burned": bool(subtitle_path)
+                        "subtitles_burned": bool(subtitle_path and burn_subtitles),
+                        "hook_overlay": bool(hook_ass_path),
+                        "hook_style": hook_list[hook_index].get("style") if hook_ass_path else None
                     })
                     state["results"] = results
 
