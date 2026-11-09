@@ -499,6 +499,48 @@ def learned_category_bonus(categories, media_format):
     return round(max(possible, default=0.0), 2)
 
 
+def score_opening_hook(start: float, levels, transcript, hook_seconds: float = 3.0):
+    """Score only positive, observable signals in the first seconds of a candidate clip."""
+    hook_end = start + hook_seconds
+    opening_items = [
+        item for item in (transcript or [])
+        if item["end"] > start and item["start"] < hook_end
+    ]
+    opening_text = " ".join(item["text"].lower() for item in opening_items)
+    upper_text = opening_text.upper()
+    reaction_hits = [phrase for phrase in STREAMER_REACTION_PHRASES if phrase in upper_text]
+    funny_hits = [phrase for phrase in STREAMER_FUNNY_PHRASES if phrase in opening_text]
+    laughter_hits = len(LAUGHTER_PATTERN.findall(opening_text))
+    word_count = sum(len(item["text"].split()) for item in opening_items)
+    opening_levels = levels[max(0, int(start)):max(0, int(math.ceil(hook_end)))]
+    average_audio = sum(opening_levels) / len(opening_levels) if opening_levels else 0.0
+
+    # This is a small bonus, not a penalty: quiet or context-setting openings are not assumed bad.
+    score = (
+        min(len(reaction_hits), 2) * 3.0
+        + min(len(funny_hits), 2) * 2.0
+        + min(laughter_hits, 2) * 2.0
+        + (1.0 if word_count >= 5 else 0.5 if word_count >= 2 else 0.0)
+        + (1.0 if average_audio >= 0.08 else 0.0)
+    )
+    signals = []
+    if reaction_hits:
+        signals.append("reaktionsfras tidigt")
+    if funny_hits or laughter_hits:
+        signals.append("humor/skrattsignal tidigt")
+    if word_count >= 5:
+        signals.append("tydligt tal direkt")
+    if average_audio >= 0.08:
+        signals.append("aktivt ljud direkt")
+    return {
+        "score": round(min(score, 12.0), 2),
+        "signals": signals,
+        "reaction_hits": reaction_hits,
+        "funny_hits": funny_hits,
+        "laughter_hits": laughter_hits
+    }
+
+
 def score_windows(duration: float, clip_len: float, levels, transcript, clip_count: int, visual_samples=None, allow_overlap=True, media_format='short'):
     latest_start = max(0.0, duration - clip_len)
     step = max(3.0, min(8.0, clip_len / 5))
@@ -563,8 +605,10 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
         if not categories and (speech_density > 0.35 or audio_score > 0.025):
             categories.append("Aktivt ögonblick")
 
+        hook = score_opening_hook(start, levels, transcript)
+        hook_bonus = hook["score"]
         learning_bonus = learned_category_bonus(categories, media_format)
-        score += learning_bonus
+        score += learning_bonus + hook_bonus
 
         matched_phrases = list(dict.fromkeys(funny_hits + reaction_hits + rage_hits + game_hits))
         reason_parts = []
@@ -582,7 +626,9 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
         scored.append({
             "start": start, "end": end, "score": score,
             "learning_bonus": learning_bonus,
-            "reason": " · ".join(reason_parts),
+            "hook_score": hook_bonus,
+            "hook_signals": hook["signals"],
+            "reason": " · ".join(reason_parts + (["stark öppning"] if hook_bonus >= 4 else [])),
             "audio_activity": round(audio_score, 3),
             "matched_phrases": matched_phrases,
             "categories": categories,
@@ -782,6 +828,8 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     "matched_phrases": candidate["matched_phrases"],
                     "rage_score": candidate["rage_score"],
                     "learning_bonus": candidate["learning_bonus"],
+                    "hook_score": candidate.get("hook_score", 0.0),
+                    "hook_signals": candidate.get("hook_signals", []),
                     "rage_phrases": candidate["rage_phrases"],
                     "transcript_excerpt": " ".join(nearby_text)[:1200]
                 })
