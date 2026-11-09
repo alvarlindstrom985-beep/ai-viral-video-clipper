@@ -830,6 +830,18 @@ def score_opening_hook(start: float, levels, transcript, hook_seconds: float = 3
 
 
 def candidate_similarity(candidate, existing):
+    """Compare two candidate clips using time overlap and transcript similarity."""
+    start_a, end_a = candidate["start"], candidate["end"]
+    start_b, end_b = existing["start"], existing["end"]
+    intersection = max(0.0, min(end_a, end_b) - max(start_a, start_b))
+    shorter = max(0.001, min(end_a - start_a, end_b - start_b))
+    union = max(end_a, end_b) - min(start_a, start_b)
+    overlap_ratio = intersection / shorter
+    iou = intersection / max(0.001, union)
+    text_a = re.sub(r"[^a-z0-9åäö]+", " ", candidate.get("_similarity_text", "").lower()).strip()
+    text_b = re.sub(r"[^a-z0-9åäö]+", " ", existing.get("_similarity_text", "").lower()).strip()
+    text_ratio = difflib.SequenceMatcher(None, text_a, text_b).ratio() if text_a and text_b else 0.0
+    return {"time_iou": iou, "overlap_ratio": overlap_ratio, "text_similarity": text_ratio}
 
 
 def retention_signal_score(hook_score: float, active_buckets: int,
@@ -861,19 +873,6 @@ def retention_signal_score(hook_score: float, active_buckets: int,
         reasons.append("blandade tittarhållningssignaler")
     label = "Starka signaler" if score >= 75 else "Lovande signaler" if score >= 55 else "Behöver manuell granskning"
     return {"score": score, "label": label, "reasons": reasons, "components": {key: round(value, 1) for key, value in parts.items()}}
-
-    """Compare two candidate clips using time overlap and transcript similarity."""
-    start_a, end_a = candidate["start"], candidate["end"]
-    start_b, end_b = existing["start"], existing["end"]
-    intersection = max(0.0, min(end_a, end_b) - max(start_a, start_b))
-    shorter = max(0.001, min(end_a - start_a, end_b - start_b))
-    union = max(end_a, end_b) - min(start_a, start_b)
-    overlap_ratio = intersection / shorter
-    iou = intersection / max(0.001, union)
-    text_a = re.sub(r"[^a-z0-9åäö]+", " ", candidate.get("_similarity_text", "").lower()).strip()
-    text_b = re.sub(r"[^a-z0-9åäö]+", " ", existing.get("_similarity_text", "").lower()).strip()
-    text_ratio = difflib.SequenceMatcher(None, text_a, text_b).ratio() if text_a and text_b else 0.0
-    return {"time_iou": iou, "overlap_ratio": overlap_ratio, "text_similarity": text_ratio}
 
 
 def is_near_duplicate(candidate, existing):
