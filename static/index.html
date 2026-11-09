@@ -13,14 +13,14 @@
     #status{margin:16px 0;color:#c7d0e2;white-space:pre-wrap}.settings{display:flex;gap:14px;flex-wrap:wrap;margin-top:18px}
     .field{display:grid;gap:6px;color:#c7d0e2}.clips{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;margin-top:16px}
     video{width:100%;max-height:420px;background:#000;border-radius:12px}.clip{background:#252d40;padding:12px;border-radius:14px;min-width:0}
-    .score{color:#b8aaff;font-weight:700}.download{color:#c9c2ff}.links{display:flex;gap:14px;flex-wrap:wrap}
-    .notice{font-size:.9rem;margin-top:20px;line-height:1.5}.group-title{margin:28px 0 8px}
+    .score{color:#b8aaff;font-weight:700}.download{color:#c9c2ff}.notice{font-size:.9rem;margin-top:20px;line-height:1.5}.group-title{margin:28px 0 8px}
     .pill{display:inline-block;padding:4px 8px;border-radius:8px;background:#37304f;color:#d2caff;font-size:.82rem}
+    progress{width:100%;height:18px;accent-color:#8b7cff}#zip{display:none;font-weight:700;color:#c9c2ff}
   </style>
 </head>
 <body><main>
   <h1>AI Viral Video Clipper</h1>
-  <p class="muted">Skapa en hel dags batch med Shorts och längre YouTube-videor – färdiga som utkast för manuell publicering.</p>
+  <p class="muted">Skapa en batch med Shorts och längre YouTube-videor – färdiga som utkast för manuell publicering.</p>
   <section class="panel">
     <label class="field">Välj stream eller inspelning
       <input id="video" type="file" accept="video/mp4,video/quicktime,video/x-matroska,video/webm">
@@ -39,16 +39,20 @@
         <select id="longLength"><option value="180" selected>3 minuter</option><option value="240">4 minuter</option><option value="300">5 minuter</option><option value="420">7 minuter</option></select>
       </label>
     </div>
-    <p class="notice">Varje grundvideo får 3 versioner med olika introeffekt och ljudmix. Det ger upp till 75 Shorts-filer + 15 längre videofiler (90 filer totalt). Det är en batch på begäran, inte en automatisk schemaläggning.</p>
-    <button id="run">Skapa dagens videobatch</button>
+    <p class="notice">Varje grundvideo får 3 versioner med olika introeffekt och ljudmix. Upp till 90 filer. En batch startas när du klickar – den schemaläggs inte automatiskt.</p>
+    <button id="run">Skapa videobatch</button>
     <p id="status">Redo. FFmpeg krävs. Installera faster-whisper och OpenCV för bättre analys.</p>
+    <progress id="progress" value="0" max="100" hidden></progress>
+    <p id="progressText" class="muted"></p>
+    <p><a id="zip" class="download" href="#">Ladda ner alla videor som ZIP</a></p>
     <div id="results"></div>
-    <p class="notice">Viktigt: Inget publiceras automatiskt. Alla filer sparas som utkast som du kan förhandsgranska, ladda ner och lägga upp själv. För att få 25 + 5 olika ögonblick behöver källvideon vara tillräckligt lång; kortare material ger färre unika klipp. Varianterna ändrar ljudmix och introeffekt – de lägger inte till olika musikspår.</p>
+    <p class="notice">Inget publiceras automatiskt. Alla filer sparas som utkast. Kortare källmaterial kan ge färre klipp. Varianterna använder olika introeffekter och ljudbearbetning, inte olika musikspår.</p>
   </section>
 </main>
 <script>
 const fileInput=document.querySelector('#video'), button=document.querySelector('#run');
 const statusEl=document.querySelector('#status'), resultsEl=document.querySelector('#results');
+const progress=document.querySelector('#progress'), progressText=document.querySelector('#progressText'), zipLink=document.querySelector('#zip');
 function addSection(title,items){
   if(!items.length)return;
   const heading=document.createElement('h2');heading.className='group-title';heading.textContent=title;resultsEl.append(heading);
@@ -65,28 +69,43 @@ function addSection(title,items){
   });
   resultsEl.append(grid);
 }
+async function pollBatch(batchId){
+  while(true){
+    const response=await fetch('/api/batch/status/'+batchId);
+    const state=await response.json();if(!response.ok)throw new Error(state.detail||'Kunde inte läsa status');
+    progress.hidden=false;progress.value=state.progress||0;
+    progressText.textContent=state.total?state.completed+' av '+state.total+' exporter klara ('+state.progress+' %)':'Förbereder analys...';
+    statusEl.textContent=state.stage||'Arbetar...';
+    if(state.status==='completed'){
+      addSection('Shorts – '+state.created.shorts+' grundklipp / '+(state.created.shorts*3)+' versioner',state.videos.filter(v=>v.type==='short'));
+      addSection('Längre videor – '+state.created.long_videos+' grundklipp / '+(state.created.long_videos*3)+' versioner',state.videos.filter(v=>v.type==='long'));
+      zipLink.href=state.zip_url;zipLink.style.display='inline';
+      let summary='Klart! '+state.created.files+' filer skapade. Allt är redo för manuell publicering.';
+      if(state.failed_files.length)summary+=' Misslyckade exporter: '+state.failed_files.length+'.';
+      statusEl.textContent=summary;progress.value=100;progressText.textContent='Batchen är klar.';return;
+    }
+    if(state.status==='failed')throw new Error(state.error||'Batchen misslyckades');
+    await new Promise(resolve=>setTimeout(resolve,1500));
+  }
+}
 button.addEventListener('click',async()=>{
   if(!fileInput.files.length){statusEl.textContent='Välj en videofil först.';return}
-  button.disabled=true;resultsEl.innerHTML='';
+  button.disabled=true;resultsEl.innerHTML='';zipLink.style.display='none';progress.hidden=true;progressText.textContent='';
   try{
     statusEl.textContent='Laddar upp källvideon...';
     const data=new FormData();data.append('video',fileInput.files[0]);
     const uploaded=await fetch('/api/upload',{method:'POST',body:data});
     const job=await uploaded.json();if(!uploaded.ok)throw new Error(job.detail||'Uppladdningen misslyckades');
-    const shorts=document.querySelector('#shortCount').value;
-    const longs=document.querySelector('#longCount').value;
-    const shortLength=document.querySelector('#shortLength').value;
-    const longLength=document.querySelector('#longLength').value;
-    statusEl.textContent='Analyserar streamen och renderar upp till 90 videofiler. Det kan ta lång tid beroende på videons längd och datorns prestanda...';
-    const response=await fetch('/api/batch/'+job.job_id+'?short_count='+shorts+'&long_count='+longs+'&variants=3&short_length='+shortLength+'&long_length='+longLength,{method:'POST'});
-    const result=await response.json();if(!response.ok)throw new Error(result.detail||'Kunde inte skapa batchen');
-    addSection('Shorts – '+result.created.shorts+' grundklipp / '+(result.created.shorts*3)+' versioner',result.videos.filter(v=>v.type==='short'));
-    addSection('Längre videor – '+result.created.long_videos+' grundklipp / '+(result.created.long_videos*3)+' versioner',result.videos.filter(v=>v.type==='long'));
-    let summary='Klart! Skapade '+result.created.shorts+' Shorts och '+result.created.long_videos+' längre grundvideor. Totalt '+result.created.files+' filer.';
-    if(result.failed_files.length)summary+=' Misslyckade exporter: '+result.failed_files.length+'.';
-    if(result.created.shorts<Number(shorts)||result.created.long_videos<Number(longs))summary+=' Källvideon gav inte tillräckligt många unika segment för hela målet.';
-    summary+=' Allt är sparat för manuell publicering – inget har publicerats automatiskt.';
-    statusEl.textContent=summary;
+    const params=new URLSearchParams({
+      short_count:document.querySelector('#shortCount').value,
+      long_count:document.querySelector('#longCount').value,
+      variants:'3',
+      short_length:document.querySelector('#shortLength').value,
+      long_length:document.querySelector('#longLength').value
+    });
+    const response=await fetch('/api/batch/'+job.job_id+'?'+params.toString(),{method:'POST'});
+    const queued=await response.json();if(!response.ok)throw new Error(queued.detail||'Kunde inte starta batchen');
+    await pollBatch(queued.batch_id);
   }catch(error){statusEl.textContent=error.message}
   finally{button.disabled=false}
 });
