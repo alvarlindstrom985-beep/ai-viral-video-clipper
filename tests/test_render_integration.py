@@ -108,7 +108,7 @@ class BatchRenderIntegrationTests(unittest.TestCase):
                 self.assertIn("highlight-report.csv", names)
                 csv_report = archive.read("highlight-report.csv").decode("utf-8-sig")
                 self.assertIn("selection_reason", csv_report.splitlines()[0])
-                self.assertIn("Vald för stark grundpoäng", csv_report)
+                self.assertIn("Vald efter grundpoäng", csv_report)
 
 
 if __name__ == "__main__":
