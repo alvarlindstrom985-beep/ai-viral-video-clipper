@@ -48,8 +48,8 @@ RAGE_PHRASES = {
     "i am so done", "i'm so done", "im so done", "this is ridiculous",
     "stop doing that", "shut up", "you ruined it", "i hate this",
     "jag blir galen", "jag blir förbannad", "blir tokig", "lägg av",
-    "vad fan", "håll käften", "är du helt", "du skojar", "jag orkar inte",
-    "det här är löjligt", "nu räcker det", "sluta", "seriöst"
+    "vad fan", "håll käften", "jag orkar inte", "det här är löjligt",
+    "nu räcker det"
 }
 
 GAME_EVENT_PHRASES = {
