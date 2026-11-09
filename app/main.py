@@ -11,12 +11,14 @@ import uuid
 import wave
 import json
 import csv
+import hashlib
+import unicodedata
 import os
 import time
 import urllib.parse
 import urllib.request
 
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -1131,6 +1133,190 @@ def add_performance(payload: dict):
     entries.append(entry)
     save_performance_entries(entries)
     return {"entry": entry, "insights": build_performance_summary(entries)}
+
+
+def normalize_csv_header(value):
+    text = unicodedata.normalize("NFKD", str(value or "").strip().lower())
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    return re.sub(r"[^a-z0-9]+", "", text)
+
+
+CSV_COLUMN_ALIASES = {
+    "title": {"videotitle", "title", "content", "videotitel", "videonamn", "innehall"},
+    "views": {"views", "visningar"},
+    "engaged_views": {"engagedviews", "engageradevisningar"},
+    "average_view_duration_sec": {"averageviewduration", "genomsnittligvisningstid", "genomsnittligvisningslangd"},
+    "average_view_percentage": {"averagepercentageviewed", "averageviewedpercentage", "averageviewpercentage", "genomsnittligvisningsprocent", "genomsnittligtvisat"},
+    "stayed_to_watch_pct": {"stayedtowatch", "stayedtowatchpercent", "howmanychosetoview", "chosetoview", "valdeattvisa", "valdeattfortsattatitta"},
+    "click_through_rate_pct": {"impressionsclickthroughrate", "impressionsclickthroughratepercent", "exponeringarklickfrekvens", "klickfrekvensforvisningar"},
+    "likes": {"likes", "gillamarkeringar", "gilla"},
+    "comments": {"comments", "kommentarer"},
+    "shares": {"shares", "delningar"},
+    "subscribers_gained": {"subscribersgained", "prenumeranter", "nyafo ljare", "newsubscribers"},
+    "category": {"category", "kategori", "klippkategori"},
+    "format": {"format", "videoformat"},
+    "variant": {"variant", "redigeringsvariant"}
+}
+
+
+def parse_csv_metric(value, integer_only=False, duration=False):
+    raw = str(value or "").strip().replace("\u00a0", " ")
+    if not raw or raw in {"—", "-", "N/A", "n/a"}:
+        return None
+    if duration:
+        match = re.fullmatch(r"(?:(\d+):)?(\d{1,2}):(\d{2})(?:[.,](\d+))?", raw)
+        if match:
+            hours = int(match.group(1) or 0)
+            minutes = int(match.group(2))
+            seconds = int(match.group(3))
+            fraction = float("0." + (match.group(4) or "0"))
+            return hours * 3600 + minutes * 60 + seconds + fraction
+        unit_match = re.fullmatch(r"(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+(?:[.,]\d+)?)\s*s)?", raw.lower())
+        if unit_match and any(unit_match.groups()):
+            return int(unit_match.group(1) or 0) * 3600 + int(unit_match.group(2) or 0) * 60 + float((unit_match.group(3) or "0").replace(",", "."))
+    cleaned = raw.replace("%", "").replace(" ", "").replace("'", "")
+    if "," in cleaned and "." in cleaned:
+        if cleaned.rfind(",") > cleaned.rfind("."):
+            cleaned = cleaned.replace(".", "").replace(",", ".")
+        else:
+            cleaned = cleaned.replace(",", "")
+    elif "," in cleaned:
+        if integer_only:
+            cleaned = cleaned.replace(",", "")
+        else:
+            cleaned = cleaned.replace(",", ".")
+    number = float(cleaned)
+    if not math.isfinite(number):
+        raise ValueError("ogiltigt tal")
+    return int(number) if integer_only and number.is_integer() else number
+
+
+def csv_row_value(row, column_map, key):
+    index = column_map.get(key)
+    return row[index] if index is not None and index < len(row) else ""
+
+
+@app.post("/api/performance/import-csv")
+async def import_performance_csv(
+    file: UploadFile = File(...),
+    category: str = Form("Annat"),
+    media_format: str = Form("short"),
+    variant: str = Form("v1")
+):
+    if category not in PERFORMANCE_CATEGORIES or media_format not in PERFORMANCE_FORMATS or variant not in PERFORMANCE_VARIANTS:
+        raise HTTPException(400, "Ogiltig standardkategori, format eller variant.")
+    filename = (file.filename or "").lower()
+    if not filename.endswith(".csv"):
+        raise HTTPException(400, "Välj en CSV-fil exporterad från YouTube Studio.")
+    raw = await file.read(10 * 1024 * 1024 + 1)
+    if len(raw) > 10 * 1024 * 1024:
+        raise HTTPException(413, "CSV-filen får vara högst 10 MB.")
+    if not raw:
+        raise HTTPException(400, "CSV-filen är tom.")
+    try:
+        decoded = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        try:
+            decoded = raw.decode("utf-16")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(400, "Kunde inte läsa CSV-kodningen. Exportera filen som UTF-8 eller UTF-16.") from exc
+
+    sample = decoded[:8192]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\\t")
+    except csv.Error:
+        dialect = csv.excel
+    reader = csv.reader(decoded.splitlines(), dialect)
+    try:
+        headers = next(reader)
+    except StopIteration:
+        raise HTTPException(400, "CSV-filen saknar kolumnrubriker.")
+    normalized_headers = [normalize_csv_header(item) for item in headers]
+    column_map = {}
+    for field, aliases in CSV_COLUMN_ALIASES.items():
+        for index, header in enumerate(normalized_headers):
+            if header in aliases:
+                column_map[field] = index
+                break
+    if "title" not in column_map or "views" not in column_map:
+        raise HTTPException(400, "CSV-filen måste innehålla kolumner för videotitel och visningar. Testa exporten Video i YouTube Studio.")
+    file_hash = hashlib.sha256(raw).hexdigest()
+    entries = read_performance_entries()
+    existing_fingerprints = {item.get("import_fingerprint") for item in entries if item.get("import_fingerprint")}
+    imported, skipped, duplicates, errors = [], 0, 0, []
+    numeric_fields = {
+        "views": (0, 10**12, True, False),
+        "engaged_views": (0, 10**12, True, False),
+        "stayed_to_watch_pct": (0, 100, False, False),
+        "average_view_duration_sec": (0, 86400, False, True),
+        "average_view_percentage": (0, 1000, False, False),
+        "click_through_rate_pct": (0, 100, False, False),
+        "likes": (0, 10**12, True, False),
+        "comments": (0, 10**12, True, False),
+        "shares": (0, 10**12, True, False),
+        "subscribers_gained": (0, 10**12, True, False)
+    }
+    for row_number, row in enumerate(reader, start=2):
+        if not row or not any(str(cell).strip() for cell in row):
+            continue
+        if row_number > 5002:
+            raise HTTPException(413, "CSV-importen är begränsad till 5 000 datarader per fil.")
+        title = str(csv_row_value(row, column_map, "title")).strip()[:120]
+        if not title:
+            skipped += 1
+            if len(errors) < 5:
+                errors.append(f"Rad {row_number}: videotitel saknas.")
+            continue
+        row_category = str(csv_row_value(row, column_map, "category")).strip()
+        row_format = str(csv_row_value(row, column_map, "format")).strip().lower()
+        row_variant = str(csv_row_value(row, column_map, "variant")).strip().lower()
+        row_category = row_category if row_category in PERFORMANCE_CATEGORIES else category
+        row_format = row_format if row_format in PERFORMANCE_FORMATS else media_format
+        row_variant = row_variant if row_variant in PERFORMANCE_VARIANTS else variant
+        cleaned = {}
+        try:
+            for key, (minimum, maximum, integer_only, is_duration) in numeric_fields.items():
+                raw_value = csv_row_value(row, column_map, key)
+                number = parse_csv_metric(raw_value, integer_only=integer_only, duration=is_duration)
+                if number is None:
+                    number = 0 if integer_only else None
+                if number is not None and (number < minimum or number > maximum or (integer_only and not float(number).is_integer())):
+                    raise ValueError(f"{key} ligger utanför tillåtet intervall")
+                cleaned[key] = int(number) if integer_only and number is not None else (round(number, 2) if number is not None else None)
+            if cleaned["views"] is None:
+                raise ValueError("visningar saknas")
+        except (ValueError, TypeError, OverflowError) as exc:
+            skipped += 1
+            if len(errors) < 5:
+                errors.append(f"Rad {row_number}: {str(exc)[:100]}")
+            continue
+        fingerprint = hashlib.sha256(f"{file_hash}:{row_number}".encode("utf-8")).hexdigest()
+        if fingerprint in existing_fingerprints:
+            duplicates += 1
+            continue
+        entry = {
+            "id": uuid.uuid4().hex[:12],
+            "title": title,
+            "category": row_category,
+            "format": row_format,
+            "variant": row_variant,
+            "recorded_at": int(time.time()),
+            "import_fingerprint": fingerprint,
+            **cleaned
+        }
+        entry["performance_score"] = performance_score(entry)
+        entries.append(entry)
+        imported.append(entry)
+        existing_fingerprints.add(fingerprint)
+    if imported:
+        save_performance_entries(entries)
+    return {
+        "imported": len(imported),
+        "skipped": skipped,
+        "duplicates": duplicates,
+        "errors": errors,
+        "insights": build_performance_summary(entries)
+    }
 
 
 @app.get("/api/batch/download/{batch_id}")
