@@ -1,4 +1,5 @@
 from array import array
+import base64
 import importlib.util
 import difflib
 import zipfile
@@ -344,7 +345,7 @@ def review_clip_with_ai(source: Path, start: float, end: float, transcript):
                     "-q:v", "7", str(frame_path)
                 ])
                 if result.returncode == 0 and frame_path.is_file():
-                    encoded = __import__("base64").b64encode(frame_path.read_bytes()).decode("ascii")
+                    encoded = base64.b64encode(frame_path.read_bytes()).decode("ascii")
                     frame_data.append({
                         "type": "input_image",
                         "image_url": "data:image/jpeg;base64," + encoded,
