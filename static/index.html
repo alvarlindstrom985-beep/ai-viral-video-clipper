@@ -56,6 +56,29 @@
     <p><a id="zip" class="download" href="#">Ladda ner alla videor som ZIP</a></p>
     <div id="results"></div>
     <p class="notice">Inget publiceras automatiskt. Alla filer sparas som utkast. Kortare källmaterial kan ge färre klipp. Varianterna använder olika introeffekter och ljudbearbetning, inte olika musikspår.</p>
+
+    <h2 class="group-title">YouTube – resultat och lärande</h2>
+    <p class="muted">Registrera statistik efter publicering. Appen jämför vilka klipptyper och redigeringsvarianter som fungerar bäst. Du hittar siffrorna i YouTube Studio → Analytics.</p>
+    <form id="performanceForm" class="settings">
+      <label class="field">Videotitel<input name="title" required maxlength="120" placeholder="Exempel: Streamern tappar det"></label>
+      <label class="field">Klippkategori<select name="category"><option>Rage/ilska</option><option>Stark reaktion</option><option>Humor/sk skratt</option><option>GTA-händelse</option><option>Annat</option></select></label>
+      <label class="field">Format<select name="format"><option value="short">Short</option><option value="long">Längre video</option></select></label>
+      <label class="field">Redigeringsvariant<select name="variant"><option value="v1">V1 – Clean</option><option value="v2">V2 – Flash</option><option value="v3">V3 – Color</option></select></label>
+      <label class="field">Visningar<input name="views" type="number" min="0" step="1" required value="0"></label>
+      <label class="field">Engagerade visningar<input name="engaged_views" type="number" min="0" step="1" placeholder="Valfritt"></label>
+      <label class="field">Stayed to watch (%) – Shorts<input name="stayed_to_watch_pct" type="number" min="0" max="100" step="0.1" placeholder="Exempel: 72.5"></label>
+      <label class="field">Genomsnittlig visningstid (sek)<input name="average_view_duration_sec" type="number" min="0" step="0.1" placeholder="Exempel: 18.4"></label>
+      <label class="field">Genomsnittligt visat (%)<input name="average_view_percentage" type="number" min="0" max="1000" step="0.1" placeholder="Exempel: 85"></label>
+      <label class="field">CTR (%) – längre video<input name="click_through_rate_pct" type="number" min="0" max="100" step="0.1" placeholder="Valfritt"></label>
+      <label class="field">Gilla-markeringar<input name="likes" type="number" min="0" step="1" value="0"></label>
+      <label class="field">Kommentarer<input name="comments" type="number" min="0" step="1" value="0"></label>
+      <label class="field">Delningar<input name="shares" type="number" min="0" step="1" value="0"></label>
+      <label class="field">Nya prenumeranter<input name="subscribers_gained" type="number" min="0" step="1" value="0"></label>
+      <button type="submit">Spara YouTube-resultat</button>
+    </form>
+    <p id="performanceStatus" class="muted">Laddar resultat...</p>
+    <div id="performanceInsights" class="clips"></div>
+    <p class="notice">Tips: jämför gärna statistik efter ungefär samma tid sedan publicering, till exempel efter 48 timmar. För Shorts är Stayed to watch och genomsnittlig visningsprocent särskilt användbara. Inga YouTube-inloggningar eller lösenord behövs.</p>
     <h2 class="group-title">Twitch – bevaka lives</h2>
     <p class="muted">Skriv Twitch-kanaler med kommatecken. Modellen kontrollerar vilka som är live via Twitchs officiella API.</p>
     <label class="field">Twitch-kanaler
@@ -201,4 +224,65 @@ button.addEventListener('click',async()=>{
   }catch(error){statusEl.textContent=error.message}
   finally{button.disabled=false}
 });
+
+const performanceForm=document.querySelector('#performanceForm');
+const performanceStatus=document.querySelector('#performanceStatus');
+const performanceInsights=document.querySelector('#performanceInsights');
+function renderPerformance(data){
+  performanceInsights.innerHTML='';
+  const insights=data.insights||{};
+  const summary=document.createElement('p');summary.className='pill';
+  summary.textContent='Registrerade videor: '+(insights.total_videos||0);
+  performanceInsights.append(summary);
+  if(insights.best_category){
+    const best=document.createElement('p');best.className='score';
+    best.textContent='Bästa kategori hittills: '+insights.best_category.label+' ('+insights.best_category.average_score+'/100, '+insights.best_category.samples+' klipp)';
+    performanceInsights.append(best);
+  }
+  if(insights.best_variant){
+    const best=document.createElement('p');best.className='score';
+    best.textContent='Bästa variant hittills: '+insights.best_variant.label+' ('+insights.best_variant.average_score+'/100, '+insights.best_variant.samples+' klipp)';
+    performanceInsights.append(best);
+  }
+  if(!insights.best_category&&!insights.best_variant){
+    const note=document.createElement('p');note.className='muted';
+    note.textContent='Samla minst 3 registrerade klipp i en kategori eller variant för att få en första jämförelse.';
+    performanceInsights.append(note);
+  }
+  (insights.summaries||[]).forEach(item=>{
+    const card=document.createElement('article');card.className='clip';
+    const heading=document.createElement('strong');heading.textContent=(item.dimension==='category'?'Kategori: ':'Variant: ')+item.label+' · '+(item.format==='short'?'Shorts':'Längre video');
+    const score=document.createElement('p');score.className='score';score.textContent='Jämförelsepoäng: '+item.average_score+'/100';
+    const details=document.createElement('p');details.className='muted';details.textContent=item.samples+' klipp · snitt '+Math.round(item.average_views).toLocaleString('sv-SE')+' visningar';
+    const retention=document.createElement('p');retention.className='muted';retention.textContent='Genomsnittligt visat: '+item.average_retention+' % · Stayed to watch: '+item.average_stayed+' %';
+    card.append(heading,score,details,retention);performanceInsights.append(card);
+  });
+}
+async function loadPerformance(){
+  try{
+    const response=await fetch('/api/performance');const data=await response.json();
+    if(!response.ok)throw new Error(data.detail||'Kunde inte läsa statistik');
+    renderPerformance(data);performanceStatus.textContent=insightsText(data.insights);
+  }catch(error){performanceStatus.textContent=error.message}
+}
+function insightsText(insights){
+  return (insights.total_videos||0)+' videor sparade. Resultaten lagras på servern och används för jämförelser.';
+}
+performanceForm.addEventListener('submit',async event=>{
+  event.preventDefault();
+  const values=Object.fromEntries(new FormData(performanceForm).entries());
+  for(const key of ['views','engaged_views','stayed_to_watch_pct','average_view_duration_sec','average_view_percentage','click_through_rate_pct','likes','comments','shares','subscribers_gained']){
+    if(values[key]==='')values[key]=null;
+    else if(values[key]!==null)values[key]=Number(values[key]);
+  }
+  performanceStatus.textContent='Sparar statistik...';
+  try{
+    const response=await fetch('/api/performance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(values)});
+    const data=await response.json();if(!response.ok)throw new Error(data.detail||'Kunde inte spara resultatet');
+    renderPerformance({insights:data.insights});
+    performanceStatus.textContent='Resultatet sparades. Jämförelsen är uppdaterad.';
+    performanceForm.reset();
+  }catch(error){performanceStatus.textContent=error.message}
+});
+loadPerformance();
 </script></body></html>
