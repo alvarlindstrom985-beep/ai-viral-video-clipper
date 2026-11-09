@@ -1,16 +1,18 @@
 # AI Viral Video Clipper
 
-A local-first starter app for turning uploaded long-form videos into short vertical clips.
+A local-first app that ranks moments in uploaded videos and renders vertical clips.
 
-## Features
-- Upload an MP4/MOV video
-- Detect candidate moments using audio energy and scene changes
-- Create 9:16 clips with FFmpeg
-- Review generated clips in a simple browser dashboard
+## What it does
+- Upload MP4, MOV, M4V, MKV, or WebM videos (up to 2 GB)
+- Analyze audio activity to find candidate moments
+- Optionally transcribe speech with Faster-Whisper and rank moments using speech density and reaction phrases
+- Render 9:16 clips in 1080 × 1920 with FFmpeg
+- Choose 1–8 clips and a duration of 15–60 seconds
+- Preview and download the generated clips
 
 ## Requirements
 - Python 3.10+
-- FFmpeg installed and available on PATH
+- FFmpeg and FFprobe installed and available on PATH
 
 ## Run locally
 ```bash
@@ -22,5 +24,12 @@ uvicorn app.main:app --reload
 ```
 Open http://127.0.0.1:8000.
 
-## Notes
-This is an MVP scaffold, not a trained viral-ranking model. It analyzes media heuristically; review clips before publishing. Upload only videos you own or have permission to use.
+## Enable speech-aware ranking (optional)
+Install the optional AI dependency:
+```bash
+pip install -r requirements-ai.txt
+```
+The first run downloads the Whisper small model, so allow extra time and disk space. CPU transcription can be slow. If Faster-Whisper is not installed or fails to load, the app falls back to audio-activity ranking.
+
+## Important limitations
+This is an early MVP, not a trained viral prediction model. It does not understand GTA gameplay events, detect jokes or kills, add animated captions, track faces, or publish to social platforms. Scores are heuristic and clips should be reviewed before posting. Only upload videos you own or have permission to use.
