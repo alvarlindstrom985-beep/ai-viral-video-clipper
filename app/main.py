@@ -738,8 +738,24 @@ def find_reaction_anchors(duration: float, levels, transcript, visual_samples=No
     return merged
 
 
+def learning_group_score(items, prior_mean, prior_strength=5.0):
+    """Shrink small samples toward the format-wide average to reduce overfitting."""
+    scores = [float(item.get("performance_score", 0) or 0) for item in items]
+    if not scores:
+        return {"samples": 0, "raw_average": 0.0, "adjusted_score": round(prior_mean, 2), "confidence": 0.0}
+    count = len(scores)
+    raw_average = sum(scores) / count
+    adjusted = (sum(scores) + prior_mean * prior_strength) / (count + prior_strength)
+    return {
+        "samples": count,
+        "raw_average": round(raw_average, 2),
+        "adjusted_score": round(adjusted, 2),
+        "confidence": round(count / (count + prior_strength), 3)
+    }
+
+
 def learned_category_bonus(categories, media_format):
-    """Apply a small, cautious ranking adjustment from previously recorded channel results."""
+    """Apply a small confidence-adjusted ranking bonus from the channel's own results."""
     category_map = {
         "Rage/ilska-signal": "Rage/ilska",
         "Streamerreaktion": "Stark reaktion",
@@ -748,19 +764,25 @@ def learned_category_bonus(categories, media_format):
         "GTA-händelse": "GTA-händelse",
         "Aktivt ögonblick": "Annat"
     }
-    entries = [item for item in read_performance_entries() if item.get("format") == media_format]
+    entries = [
+        item for item in read_performance_entries()
+        if item.get("format") == media_format and item.get("views", 0) > 0
+    ]
     if len(entries) < 3:
         return 0.0
-    overall = sum(item.get("performance_score", 0) for item in entries) / len(entries)
+    overall = sum(float(item.get("performance_score", 0) or 0) for item in entries) / len(entries)
     possible = []
     for signal in categories:
         label = category_map.get(signal)
         if not label:
             continue
         matching = [item for item in entries if item.get("category") == label]
-        if len(matching) >= 3:
-            average = sum(item.get("performance_score", 0) for item in matching) / len(matching)
-            possible.append(max(-5.0, min(5.0, (average - overall) * 0.15)))
+        if len(matching) < 3:
+            continue
+        estimate = learning_group_score(matching, overall)
+        # Shrink low-confidence groups toward the channel baseline; keep influence deliberately small.
+        delta = (estimate["adjusted_score"] - overall) * 0.12
+        possible.append(max(-3.0, min(3.0, delta)))
     return round(max(possible, default=0.0), 2)
 
 
@@ -1544,24 +1566,42 @@ def build_performance_summary(entries):
             group_key = (key, label, entry.get("format", "short"))
             groups.setdefault(group_key, []).append(entry)
     summaries = []
+    learning_recommendations = []
     for (key, label, media_format), items in groups.items():
+        estimate = learning_group_score(
+            items,
+            sum(float(item.get("performance_score", 0) or 0) for item in entries
+                if item.get("format", "short") == media_format)
+            / max(1, sum(1 for item in entries if item.get("format", "short") == media_format))
+        )
         summaries.append({
             "dimension": key, "label": label, "format": media_format,
             "samples": len(items),
             "average_score": round(sum(item.get("performance_score", 0) for item in items) / len(items), 2),
+            "adjusted_score": estimate["adjusted_score"],
+            "confidence": estimate["confidence"],
             "average_views": round(sum(item.get("views", 0) for item in items) / len(items), 1),
             "average_retention": round(sum(item.get("average_view_percentage", 0) for item in items if item.get("average_view_percentage") is not None) / max(1, sum(1 for item in items if item.get("average_view_percentage") is not None)), 2),
-            "average_stayed": round(sum(item.get("stayed_to_watch_pct", 0) for item in items if item.get("stayed_to_watch_pct") is not None) / max(1, sum(1 for item in items if item.get("stayed_to_watch_pct") is not None)), 2)
+            "average_stayed": round(sum(item.get("stayed_to_watch_pct", 0) for item in items if item.get("stayed_to_watch_pct") is not None) / max(1, sum(1 for item in items if item.get("stayed_to_watch_pct") is not None))
         })
+        if len(items) >= 3:
+            learning_recommendations.append({
+                "dimension": key, "label": label, "format": media_format,
+                **estimate
+            })
     category_groups = [item for item in summaries if item["dimension"] == "category" and item["samples"] >= 3]
     variant_groups = [item for item in summaries if item["dimension"] == "variant" and item["samples"] >= 3]
+    best_category = max(category_groups, key=lambda item: item["adjusted_score"], default=None)
+    best_variant = max(variant_groups, key=lambda item: item["adjusted_score"], default=None)
     return {
         "total_videos": len(entries),
-        "summaries": sorted(summaries, key=lambda item: (item["dimension"], -item["average_score"])),
-        "best_category": max(category_groups, key=lambda item: item["average_score"], default=None),
-        "best_variant": max(variant_groups, key=lambda item: item["average_score"], default=None),
+        "summaries": sorted(summaries, key=lambda item: (item["dimension"], -item["adjusted_score"])),
+        "best_category": best_category,
+        "best_variant": best_variant,
+        "learning_recommendations": sorted(learning_recommendations, key=lambda item: item["adjusted_score"], reverse=True),
         "minimum_samples_for_recommendation": 3,
-        "note": "Poängen är en intern jämförelsesiffra, inte en prognos för viralitet. Jämför helst videor med liknande ålder och format."
+        "prior_strength": 5,
+        "note": "Justerad poäng dras mot kanalens genomsnitt när urvalet är litet. Det är en intern jämförelse, inte en prognos för viralitet. Jämför videor med liknande ålder och format."
     }
 
 
