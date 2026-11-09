@@ -208,6 +208,11 @@ async function pollBatch(batchId){
         const hook=document.createElement('p');hook.className='pill';hook.textContent='Hook första 3 sekunderna: '+(moment.hook_score||0)+' poäng'+((moment.hook_signals||[]).length?' · '+moment.hook_signals.join(', '):'');
         const retention=document.createElement('p');retention.className='score';retention.textContent='Tittarhållningssignaler: '+(moment.retention_score||0)+'/100 · '+(moment.retention_label||'Ej bedömd');
         const retentionReasons=document.createElement('p');retentionReasons.className='muted';retentionReasons.textContent=(moment.retention_reasons||[]).join(' · ');
+        const aiReview=moment.ai_review||{};
+        const aiReviewScore=document.createElement('p');aiReviewScore.className='score';
+        aiReviewScore.textContent=aiReview.status==='completed'?'AI-granskning: '+(aiReview.score||0)+'/100 · '+(aiReview.verdict||'Bedömd'):'AI-granskning: '+(aiReview.message||'Inte tillgänglig');
+        const aiReviewDetails=document.createElement('p');aiReviewDetails.className='muted';
+        aiReviewDetails.textContent=aiReview.status==='completed'?((aiReview.strengths||[]).join(' · ')+(aiReview.weaknesses&&aiReview.weaknesses.length?' | Att förbättra: '+aiReview.weaknesses.join(' · '):'')+(aiReview.suggestion?' | Förslag: '+aiReview.suggestion:'')):'';
         const pacing=document.createElement('p');pacing.className='pill';pacing.textContent='Aktivitet genom klippet: '+(moment.pacing_buckets_active||0)+'/4 delar';
         const diversity=document.createElement('p');diversity.className='muted';diversity.textContent='Olika signaltyper: '+(moment.signal_families||0)+' · mångfaldspoäng: '+(moment.signal_diversity_score||0);
         const payoff=document.createElement('p');payoff.className='muted';payoff.textContent='Payoff mot slutet: '+(moment.payoff_score||0)+' poäng';
@@ -215,7 +220,7 @@ async function pollBatch(batchId){
         const ragePhrases=document.createElement('p');ragePhrases.className='muted';ragePhrases.textContent=(moment.rage_phrases||[]).length?'Uppfattade uttryck: '+moment.rage_phrases.join(', '):'Ingen tydlig rage-fras hittades';
         const reason=document.createElement('p');reason.className='muted';reason.textContent=moment.reason;
         const excerpt=document.createElement('p');excerpt.className='muted';excerpt.textContent=moment.transcript_excerpt||'Inget transkript tillgängligt.';
-        card.append(label,timing,score,retention,retentionReasons,hook,pacing,diversity,payoff,rage,learning,ragePhrases,reason,excerpt);highlightGrid.append(card);
+        card.append(label,timing,score,retention,retentionReasons,aiReviewScore,aiReviewDetails,hook,pacing,diversity,payoff,rage,learning,ragePhrases,reason,excerpt);highlightGrid.append(card);
       });
       resultsEl.insertBefore(highlightGrid,report);
       let summary='Klart! '+state.created.files+' filer klarade teknisk kvalitetskontroll. '+(state.quality_rejected||0)+' exporter underkändes och togs bort. Allt är redo för manuell granskning före publicering.';
