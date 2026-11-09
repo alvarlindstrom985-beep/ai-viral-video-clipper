@@ -369,7 +369,7 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
             "motion_score": visual["motion_score"],
             "reaction_anchor": min(
                 (anchor["time"] for anchor in anchors if start <= anchor["time"] <= end),
-                key=lambda value: abs(value - (start + end / 2)),
+                key=lambda value: abs(value - ((start + end) / 2)),
                 default=None
             )
         })
