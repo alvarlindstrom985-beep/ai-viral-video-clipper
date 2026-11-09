@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AI Viral Video Clipper</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#10131b;color:#f4f6fb;font:16px system-ui,sans-serif}
+    main{max-width:900px;margin:50px auto;padding:24px}.panel{background:#1b2130;border:1px solid #30394d;border-radius:18px;padding:24px}
+    h1{font-size:clamp(2rem,5vw,3.2rem);margin:0 0 8px}.muted{color:#aab4c8}
+    input,button{font:inherit;border-radius:10px;padding:12px}input{max-width:100%;background:#0f1420;color:white;border:1px solid #46516a}
+    button{background:#8b7cff;color:#111;font-weight:700;border:0;cursor:pointer;margin:8px 0}button:disabled{opacity:.5}
+    #status{margin:16px 0;color:#c7d0e2}.clips{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:20px}
+    video{width:100%;max-height:480px;background:#000;border-radius:12px}.clip{background:#252d40;padding:12px;border-radius:14px}
+  </style>
+</head>
+<body><main>
+  <h1>AI Viral Video Clipper</h1>
+  <p class="muted">Ladda upp en video och skapa korta vertikala klipp.</p>
+  <section class="panel">
+    <input id="video" type="file" accept="video/*">
+    <div><button id="run">Ladda upp och skapa klipp</button></div>
+    <p id="status">Redo. Kräver FFmpeg installerat på servern.</p>
+    <div id="clips" class="clips"></div>
+  </section>
+</main>
+<script>
+const fileInput=document.querySelector('#video'), button=document.querySelector('#run');
+const statusEl=document.querySelector('#status'), clipsEl=document.querySelector('#clips');
+button.addEventListener('click',async()=>{
+  if(!fileInput.files.length){statusEl.textContent='Välj en videofil först.';return}
+  button.disabled=true;clipsEl.innerHTML='';
+  try{
+    statusEl.textContent='Laddar upp videon...';
+    const data=new FormData();data.append('video',fileInput.files[0]);
+    const uploaded=await fetch('/api/upload',{method:'POST',body:data});
+    const job=await uploaded.json();if(!uploaded.ok)throw new Error(job.detail||'Uppladdningen misslyckades');
+    statusEl.textContent='Skapar klipp...';
+    const response=await fetch('/api/process/'+job.job_id,{method:'POST'});
+    const result=await response.json();if(!response.ok)throw new Error(result.detail||'Kunde inte skapa klipp');
+    result.clips.forEach((clip,i)=>{
+      const card=document.createElement('article');card.className='clip';
+      const video=document.createElement('video');video.controls=true;video.src=clip.url;
+      const label=document.createElement('p');label.textContent='Klipp '+(i+1)+' · start '+clip.start+' s';
+      const link=document.createElement('a');link.href=clip.url;link.download=clip.name;link.textContent='Ladda ner klippet';
+      card.append(video,label,link);clipsEl.append(card);
+    });
+    statusEl.textContent=result.clips.length?'Klart! Granska klippen innan du publicerar.':result.note;
+  }catch(error){statusEl.textContent=error.message}
+  finally{button.disabled=false}
+});
+</script></body></html>
