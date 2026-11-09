@@ -71,6 +71,18 @@ class AdaptiveLearningTests(unittest.TestCase):
         self.assertLess(bonus, 0)
         self.assertGreaterEqual(bonus, -3.0)
 
+    def test_cached_entries_avoid_reloading_performance_file(self):
+        entries = [
+            {"format": "short", "views": 100, "performance_score": 90, "category": "Rage/ilska"}
+            for _ in range(4)
+        ] + [
+            {"format": "short", "views": 100, "performance_score": 40, "category": "Humor/skratt"}
+            for _ in range(4)
+        ]
+        with patch("app.main.read_performance_entries", side_effect=AssertionError("unexpected file read")):
+            bonus = learned_category_bonus(["Rage/ilska-signal"], "short", entries)
+        self.assertGreater(bonus, 0)
+
 
 class ClipSimilarityTests(unittest.TestCase):
     def test_same_time_window_is_duplicate(self):
