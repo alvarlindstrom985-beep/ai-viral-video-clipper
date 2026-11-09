@@ -13,6 +13,7 @@ import json
 import csv
 import hashlib
 import unicodedata
+import io
 import os
 import time
 import urllib.parse
@@ -1152,7 +1153,7 @@ CSV_COLUMN_ALIASES = {
     "likes": {"likes", "gillamarkeringar", "gilla"},
     "comments": {"comments", "kommentarer"},
     "shares": {"shares", "delningar"},
-    "subscribers_gained": {"subscribersgained", "prenumeranter", "nyafo ljare", "newsubscribers"},
+    "subscribers_gained": {"subscribersgained", "prenumeranter", "newsubscribers"},
     "category": {"category", "kategori", "klippkategori"},
     "format": {"format", "videoformat"},
     "variant": {"variant", "redigeringsvariant"}
@@ -1223,10 +1224,10 @@ async def import_performance_csv(
 
     sample = decoded[:8192]
     try:
-        dialect = csv.Sniffer().sniff(sample, delimiters=",;\\t")
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
     except csv.Error:
         dialect = csv.excel
-    reader = csv.reader(decoded.splitlines(), dialect)
+    reader = csv.reader(io.StringIO(decoded, newline=""), dialect)
     try:
         headers = next(reader)
     except StopIteration:
