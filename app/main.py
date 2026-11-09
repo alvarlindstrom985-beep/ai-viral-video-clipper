@@ -564,7 +564,46 @@ def inspect_ass_layout(path: Path, expected_width: int, expected_height: int):
             continue
         if font_size and len(plain) * font_size * 0.58 > available:
             result["warnings"].append("En hook-/undertextrad kan bli för bred för bildytan")
-            break
+
+        # Approximate the vertical anchor from ASS alignment and margins.
+        # These are advisory platform/game-HUD safe zones, not GTA-specific OCR.
+        try:
+            if 1 <= alignment <= 3:
+                anchor_y = height - margin_v
+                if anchor_y + font_size * 0.25 >= height * 0.88:
+                    result["warnings"].append(
+                        "Undertext kan hamna i nedre gränssnittszonen (spel-HUD/Shorts-kontroller)"
+                    )
+            elif 7 <= alignment <= 9:
+                anchor_y = margin_v
+                if anchor_y - font_size * 0.25 <= height * 0.08:
+                    result["warnings"].append(
+                        "Hooktext kan hamna för nära övre gränssnittszonen"
+                    )
+        except (NameError, TypeError):
+            pass
+
+    # Explicit event positioning can override style alignment. Flag positions
+    # close to the top/bottom safe-zone boundaries for manual review.
+    for event in content.splitlines():
+        if not event.startswith("Dialogue:") or event.count(",") < 9:
+            continue
+        event_text = event.split(",", 9)[-1]
+        position = re.search(r"\\\\pos\\(([-0-9.]+),([-0-9.]+)\\\\)", event_text)
+        if position:
+            try:
+                pos_y = float(position.group(2))
+                if pos_y >= height * 0.88:
+                    result["warnings"].append(
+                        "En undertexthändelse har explicit position i nedre gränssnittszonen"
+                    )
+                elif pos_y <= height * 0.08:
+                    result["warnings"].append(
+                        "En undertexthändelse har explicit position i övre gränssnittszonen"
+                    )
+            except ValueError:
+                pass
+
     result["warnings"] = list(dict.fromkeys(result["warnings"]))
     return result
 
