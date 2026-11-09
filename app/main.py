@@ -427,11 +427,11 @@ def inspect_render_quality(path: Path, expected_duration: float, expected_width:
             log = (video_scan.stderr or "")[-30000:]
             black_total = sum(
                 max(0.0, float(match.group(2)) - float(match.group(1)))
-                for match in re.finditer(r"black_start:([0-9.]+)\\s+black_end:([0-9.]+)", log)
+                for match in re.finditer(r"black_start:([0-9.]+)\s+black_end:([0-9.]+)", log)
             )
             freeze_total = sum(
                 max(0.0, float(match.group(2)) - float(match.group(1)))
-                for match in re.finditer(r"freeze_start:([0-9.]+)\\s+freeze_end:([0-9.]+)", log)
+                for match in re.finditer(r"freeze_start:([0-9.]+)\s+freeze_end:([0-9.]+)", log)
             )
             diagnostics["black_seconds"] = round(black_total, 2)
             diagnostics["freeze_seconds"] = round(freeze_total, 2)
@@ -454,7 +454,7 @@ def inspect_render_quality(path: Path, expected_duration: float, expected_width:
                 capture_output=True, text=True, timeout=45
             )
             if audio_scan.returncode == 0:
-                peak = re.search(r"max_volume:\\s*(-?[0-9.]+)\\s*dB", audio_scan.stderr or "")
+                peak = re.search(r"max_volume:\s*(-?[0-9.]+)\s*dB", audio_scan.stderr or "")
                 if peak:
                     peak_db = float(peak.group(1))
                     diagnostics["audio_peak_db"] = round(peak_db, 2)
