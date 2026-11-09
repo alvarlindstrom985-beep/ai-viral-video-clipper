@@ -53,6 +53,15 @@
     <p id="status">Redo. FFmpeg krävs. Installera faster-whisper och OpenCV för bättre analys.</p>
     <progress id="progress" value="0" max="100" hidden></progress>
     <p id="progressText" class="muted"></p>
+    <h3>Lagring och diskutrymme</h3>
+    <p class="muted">Övervakar ledigt utrymme och hittar gamla exporter och källvideor. Rensning kräver alltid en separat bekräftande knapptryckning.</p>
+    <div class="settings">
+      <button id="checkStorage" type="button">Kontrollera lagring</button>
+      <button id="previewCleanup" type="button">Förhandsgranska rensning</button>
+      <button id="runCleanup" type="button" disabled>Rensa gamla filer</button>
+    </div>
+    <p id="storageStatus" class="muted">Lagringskontroll har inte körts ännu.</p>
+    <div id="storagePreview" class="clips"></div>
     <h3>Senaste batchjobb</h3>
     <p class="muted">Jobb sparas på servern. Om servern startas om kan avbrutna jobb startas om härifrån.</p>
     <div id="batchHistory" class="clips"></div>
@@ -250,6 +259,63 @@ async function pollBatch(batchId){
     await new Promise(resolve=>setTimeout(resolve,1500));
   }
 }
+const storageStatusEl=document.querySelector('#storageStatus');
+const storagePreviewEl=document.querySelector('#storagePreview');
+const runCleanupButton=document.querySelector('#runCleanup');
+let pendingCleanupCount=0;
+function formatBytes(bytes){
+  if(!Number.isFinite(bytes)||bytes<=0)return '0 MB';
+  const units=['B','KB','MB','GB','TB'];let value=bytes,index=0;
+  while(value>=1024&&index<units.length-1){value/=1024;index++}
+  return value.toFixed(index===0?0:1)+' '+units[index];
+}
+function renderStorage(data){
+  const warnings=(data.warnings||[]);
+  storageStatusEl.textContent='Disk: '+data.disk_used_percent+' % använt · '+formatBytes(data.disk_free_bytes)+' ledigt · Uppladdningar: '+formatBytes(data.uploads_bytes)+' · Exporter: '+formatBytes(data.outputs_bytes)+
+    ' · Gamla filer att granska: '+data.cleanup_preview_count+' ('+formatBytes(data.cleanup_preview_bytes)+').'+
+    (warnings.length?' Varning: '+warnings.join(' '):' Lagringsnivån ser bra ut.');
+}
+document.querySelector('#checkStorage').addEventListener('click',async()=>{
+  storageStatusEl.textContent='Kontrollerar diskutrymme...';
+  try{
+    const response=await fetch('/api/storage');const data=await response.json();
+    if(!response.ok)throw new Error(data.detail||'Lagringskontrollen misslyckades');
+    renderStorage(data);storagePreviewEl.innerHTML='';pendingCleanupCount=0;runCleanupButton.disabled=true;
+  }catch(error){storageStatusEl.textContent=error.message}
+});
+document.querySelector('#previewCleanup').addEventListener('click',async()=>{
+  storageStatusEl.textContent='Letar efter gamla filer...';
+  try{
+    const response=await fetch('/api/storage/cleanup?dry_run=true',{method:'POST'});
+    const data=await response.json();if(!response.ok)throw new Error(data.detail||'Kunde inte förhandsgranska rensningen');
+    renderStorage(data.storage);storagePreviewEl.innerHTML='';
+    pendingCleanupCount=data.candidates.length;runCleanupButton.disabled=pendingCleanupCount===0;
+    if(!pendingCleanupCount){storageStatusEl.textContent+=' Inga gamla filer behöver rensas.';return}
+    data.candidates.slice(0,12).forEach(item=>{
+      const line=document.createElement('p');line.className='muted';
+      line.textContent=item.filename+' · '+formatBytes(item.size_bytes)+' · '+item.reason;
+      storagePreviewEl.append(line);
+    });
+    if(pendingCleanupCount>12){
+      const more=document.createElement('p');more.className='muted';
+      more.textContent='...och '+(pendingCleanupCount-12)+' fler filer.';
+      storagePreviewEl.append(more);
+    }
+    storageStatusEl.textContent+=' Förhandsgranskning klar: '+pendingCleanupCount+' filer kan rensas. Tryck på Rensa gamla filer för att genomföra.';
+  }catch(error){storageStatusEl.textContent=error.message}
+});
+runCleanupButton.addEventListener('click',async()=>{
+  if(!pendingCleanupCount)return;
+  runCleanupButton.disabled=true;storageStatusEl.textContent='Rensar godkända gamla filer...';
+  try{
+    const response=await fetch('/api/storage/cleanup?dry_run=false',{method:'POST'});
+    const data=await response.json();if(!response.ok)throw new Error(data.detail||'Rensningen misslyckades');
+    renderStorage(data.storage);storagePreviewEl.innerHTML='';
+    storageStatusEl.textContent+=' Rensade '+data.deleted_count+' filer ('+formatBytes(data.deleted_bytes)+').';
+    if(data.errors&&data.errors.length)storageStatusEl.textContent+=' Vissa filer kunde inte rensas: '+data.errors.join(' · ');
+    pendingCleanupCount=0;
+  }catch(error){storageStatusEl.textContent=error.message;runCleanupButton.disabled=false}
+});
 async function loadBatchHistory(){
   const container=document.querySelector('#batchHistory');
   if(!container)return;
