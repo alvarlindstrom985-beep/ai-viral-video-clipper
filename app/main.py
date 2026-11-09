@@ -246,6 +246,45 @@ def visual_window_signals(visual_samples, start: float, end: float):
         "motion_score": round(motion_score, 3)
     }
 
+def find_reaction_anchors(duration: float, levels, transcript, visual_samples=None):
+    """Find approximate reaction timestamps from speech, laughter, audio peaks and weak visual cues."""
+    anchors = []
+    for item in transcript or []:
+        text = item["text"].lower()
+        funny = any(phrase in text for phrase in STREAMER_FUNNY_PHRASES)
+        reaction = any(phrase in text.upper() for phrase in STREAMER_REACTION_PHRASES)
+        laughter = bool(LAUGHTER_PATTERN.search(text))
+        if funny or reaction or laughter:
+            anchors.append({
+                "time": max(0.0, min(duration, (item["start"] + item["end"]) / 2)),
+                "kind": "speech"
+            })
+
+    if levels:
+        baseline = sorted(levels)[len(levels) // 2]
+        threshold = max(0.055, baseline * 1.9)
+        for index, level in enumerate(levels):
+            before = levels[index - 1] if index > 0 else 0.0
+            after = levels[index + 1] if index + 1 < len(levels) else 0.0
+            if level >= threshold and level >= before and level >= after:
+                anchors.append({"time": min(duration, index + 0.5), "kind": "audio"})
+
+    for sample in visual_samples or []:
+        if sample.get("smiles", 0) > 0:
+            anchors.append({"time": sample["time"], "kind": "visual"})
+
+    # Merge nearby signals so one reaction does not create many almost identical windows.
+    anchors.sort(key=lambda item: item["time"])
+    merged = []
+    for anchor in anchors:
+        if merged and anchor["time"] - merged[-1]["time"] < 3.0:
+            if anchor["kind"] == "speech":
+                merged[-1] = anchor
+        else:
+            merged.append(anchor)
+    return merged
+
+
 def score_windows(duration: float, clip_len: float, levels, transcript, clip_count: int, visual_samples=None):
     latest_start = max(0.0, duration - clip_len)
     step = max(3.0, min(8.0, clip_len / 5))
@@ -256,6 +295,13 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
         current += step
     if latest_start not in starts:
         starts.append(latest_start)
+
+    anchors = find_reaction_anchors(duration, levels, transcript, visual_samples)
+    pre_roll = min(8.0, max(4.0, clip_len * 0.25))
+    for anchor in anchors:
+        centered_start = max(0.0, min(latest_start, anchor["time"] - pre_roll))
+        starts.append(centered_start)
+    starts = sorted(set(round(value, 2) for value in starts))
 
     scored = []
     for start in starts:
@@ -320,7 +366,12 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
             "visual_score": visual["visual_score"],
             "smile_samples": visual["smile_samples"],
             "face_samples": visual["face_samples"],
-            "motion_score": visual["motion_score"]
+            "motion_score": visual["motion_score"],
+            "reaction_anchor": min(
+                (anchor["time"] for anchor in anchors if start <= anchor["time"] <= end),
+                key=lambda value: abs(value - (start + end / 2)),
+                default=None
+            )
         })
 
     scored.sort(key=lambda item: item["score"], reverse=True)
@@ -403,9 +454,10 @@ def process_video(job_id: str, clip_count: int = 3, clip_length: int = 30):
     results = []
     for index, candidate in enumerate(candidates, 1):
         out = OUTPUTS / f"{job_id}_clip_{index}.mp4"
+        candidate_length = max(5.0, candidate["end"] - candidate["start"])
         command = [
             "ffmpeg", "-y", "-ss", str(candidate["start"]), "-i", str(source),
-            "-t", str(actual_clip_len), "-vf",
+            "-t", str(candidate_length), "-vf",
             "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
             "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(out)
@@ -421,6 +473,9 @@ def process_video(job_id: str, clip_count: int = 3, clip_length: int = 30):
                 "subtitle_name": subtitle_name,
                 "subtitle_url": f"/api/subtitles/{subtitle_name}" if subtitle_name else None,
                 "start": round(candidate["start"], 1),
+                "end": round(candidate["end"], 1),
+                "duration": round(candidate_length, 1),
+                "reaction_anchor": round(candidate["reaction_anchor"], 1) if candidate["reaction_anchor"] is not None else None,
                 "score": round(candidate["score"], 2),
                 "reason": candidate["reason"],
                 "matched_phrases": candidate["matched_phrases"],
