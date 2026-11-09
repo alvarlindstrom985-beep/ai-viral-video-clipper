@@ -69,6 +69,12 @@ The dashboard can check up to 20 Twitch channel logins using Twitch's official H
 The browser refreshes live status every 60 seconds while the dashboard is open and monitoring is enabled. This is browser-session monitoring, not a persistent 24/7 background service. The integration only displays live status, stream title, game, viewer count, and a link to the channel. It does not join chats, record, download, or clip other creators' streams. Use only source recordings/VODs you own or have permission to process. Keep the client secret on the server; never put it in frontend code.
 
 
+## Word-by-word karaoke captions
+
+The batch generator can request word-level timestamps from Faster-Whisper and render an ASS karaoke subtitle track. The active word is highlighted as the streamer speaks. Select **Word by word – karaoke highlight** in the dashboard, or choose sentence captions for conventional subtitles. A standard SRT sidecar is also included for editing and accessibility.
+
+Word timing is estimated by speech recognition and may drift or mis-transcribe fast speech, overlapping voices, slang, or game audio. Review the result before publishing. If word timestamps are unavailable, the generator falls back to sentence captions.
+
 ## Burned-in captions and subtitle styles
 
 Batch exports can optionally burn captions directly into the video when Faster-Whisper transcription is available. The dashboard offers three styles:
