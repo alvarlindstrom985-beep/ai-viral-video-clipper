@@ -198,3 +198,8 @@ Urvalet väger nu även in om ett klipp riskerar att börja eller sluta mitt i e
 ### Payoff-tajming
 
 Urvalet bedömer nu även när en upptäckt reaktion eller händelse inträffar i klippet. Tydliga talbaserade reaktionsankare väger tyngre än ljudtoppar och visuella signaler. En payoff i ungefär 68–90 procent av klippet kan få en liten bonus, medan en händelse efter 94 procent kan få avdrag eftersom det riskerar att saknas utrymme efter reaktionen. Dashboarden visar poäng, signaltyp och ungefärlig position. Detta är en heuristik, inte en förståelse av hela videons berättelse.
+
+
+### Storyline Detector
+
+Urvalet uppskattar nu om ett klipp innehåller en enkel händelsekedja: uppladdning före en upptäckt reaktion/händelse och efterspel efter den. Bedömningen använder tidsstämplar i transkriptet och befintliga tal-, ljud- och visuella reaktionsankare. Den kan ge en begränsad poängjustering och visar vilka delar som hittats i dashboarden. Detta är en tidsbaserad heuristik – systemet förstår inte säkert orsakssamband, ironi eller hela spelhändelsens sammanhang. Kontrollera därför klippen manuellt.
