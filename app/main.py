@@ -25,8 +25,48 @@ MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024
 HIGHLIGHT_WORDS = {
     "wow", "what", "no", "bro", "insane", "crazy", "lets go", "let's go",
     "oh my god", "wait", "help", "nej", "va", "sjukt", "herregud", "fan",
-    "jävlar", "kom igen", "seriöst", "hahaha", "haha"
+    "jävlar", "kom igen", "seriöst", "hahaha", "haha", "no way", "what the",
+    "mission", "heist", "wanted level", "five stars", "police", "cop",
+    "explosion", "crash", "chase", "getaway", "busted", "survived",
+    "headshot", "sniper", "gang", "casino", "rån", "polis", "sprängde"
 }
+
+
+def srt_timestamp(seconds: float) -> str:
+    milliseconds = max(0, int(round(seconds * 1000)))
+    hours, remainder = divmod(milliseconds, 3_600_000)
+    minutes, remainder = divmod(remainder, 60_000)
+    secs, millis = divmod(remainder, 1000)
+    return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
+
+
+def write_clip_subtitles(job_id: str, clip_number: int, start: float, end: float, transcript):
+    """Write a standard SRT subtitle file for the selected clip."""
+    if transcript is None:
+        return None
+    entries = [
+        item for item in transcript
+        if item["end"] > start and item["start"] < end
+    ]
+    if not entries:
+        return None
+    subtitle_path = OUTPUTS / f"{job_id}_clip_{clip_number}.srt"
+    lines = []
+    for number, item in enumerate(entries, 1):
+        local_start = max(0.0, item["start"] - start)
+        local_end = min(end - start, item["end"] - start)
+        if local_end <= local_start:
+            continue
+        lines.extend([
+            str(number),
+            f"{srt_timestamp(local_start)} --> {srt_timestamp(local_end)}",
+            item["text"].replace("-->", "→").strip(),
+            ""
+        ])
+    if not lines:
+        return None
+    subtitle_path.write_text("\\n".join(lines), encoding="utf-8")
+    return subtitle_path.name
 
 app = FastAPI(title="AI Viral Video Clipper")
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
@@ -124,7 +164,8 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
         word_count = sum(len(item["text"].split()) for item in words)
         spoken_seconds = sum(max(0.0, min(end, item["end"]) - max(start, item["start"])) for item in words)
         text = " ".join(item["text"].lower() for item in words)
-        keyword_hits = sum(1 for phrase in HIGHLIGHT_WORDS if phrase in text)
+        matched_phrases = [phrase for phrase in HIGHLIGHT_WORDS if phrase in text]
+        keyword_hits = len(matched_phrases)
         speech_density = word_count / max(clip_len, 1)
         # Transcription is the strongest signal; audio energy provides a fallback/tie-breaker.
         score = (speech_density * 65) + (keyword_hits * 8) + (audio_score * 20)
@@ -136,7 +177,8 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
         )
         scored.append({
             "start": start, "end": end, "score": score,
-            "reason": reason, "audio_activity": round(audio_score, 3)
+            "reason": reason, "audio_activity": round(audio_score, 3),
+            "matched_phrases": matched_phrases
         })
 
     scored.sort(key=lambda item: item["score"], reverse=True)
@@ -227,12 +269,18 @@ def process_video(job_id: str, clip_count: int = 3, clip_length: int = 30):
         ]
         run = run_command(command)
         if run.returncode == 0 and out.exists():
+            subtitle_name = write_clip_subtitles(
+                job_id, index, candidate["start"], candidate["end"], transcript
+            )
             results.append({
                 "name": out.name,
                 "url": f"/api/clips/{out.name}",
+                "subtitle_name": subtitle_name,
+                "subtitle_url": f"/api/subtitles/{subtitle_name}" if subtitle_name else None,
                 "start": round(candidate["start"], 1),
                 "score": round(candidate["score"], 2),
-                "reason": candidate["reason"]
+                "reason": candidate["reason"],
+                "matched_phrases": candidate["matched_phrases"]
             })
 
     if not results:
@@ -245,6 +293,16 @@ def process_video(job_id: str, clip_count: int = 3, clip_length: int = 30):
         "transcript_available": transcript is not None,
         "note": "Scores are heuristic estimates, not a guarantee that a clip will go viral."
     }
+
+
+@app.get("/api/subtitles/{filename}")
+def get_subtitles(filename: str):
+    if not re.fullmatch(r"[a-f0-9]{12}_clip_[1-8]\\.srt", filename):
+        raise HTTPException(400, "Invalid subtitle name")
+    path = OUTPUTS / filename
+    if not path.is_file():
+        raise HTTPException(404, "Subtitles not found")
+    return FileResponse(path, media_type="application/x-subrip", filename=path.name)
 
 
 @app.get("/api/clips/{filename}")
