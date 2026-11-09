@@ -10,6 +10,7 @@ import tempfile
 import uuid
 import wave
 import json
+import csv
 import os
 import time
 import urllib.parse
@@ -606,6 +607,30 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                 visual_samples, allow_overlap=False
             )
 
+        # Save an editable timestamp index for every selected highlight.
+        highlights = []
+        for media_type, candidates, clip_duration in (
+            ("short", short_candidates, short_duration),
+            ("long", long_candidates, min(float(long_length), duration))
+        ):
+            for index, candidate in enumerate(candidates, 1):
+                nearby_text = [
+                    item["text"] for item in (transcript or [])
+                    if item["end"] >= candidate["start"] and item["start"] <= candidate["start"] + clip_duration
+                ]
+                highlights.append({
+                    "type": media_type,
+                    "number": index,
+                    "start_seconds": round(candidate["start"], 2),
+                    "end_seconds": round(candidate["start"] + clip_duration, 2),
+                    "score": round(candidate["score"], 2),
+                    "reason": candidate["reason"],
+                    "categories": candidate["categories"],
+                    "matched_phrases": candidate["matched_phrases"],
+                    "transcript_excerpt": " ".join(nearby_text)[:1200]
+                })
+        state["highlights"] = highlights
+
         recipes = [
             {"id": "v1", "label": "Clean intro · original audio",
              "video_filter": "fade=t=in:st=0:d=0.55", "audio_filter": None},
@@ -661,12 +686,34 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
 
         if not results:
             raise RuntimeError("No videos could be rendered. Check FFmpeg and the source file.")
+        report_json = OUTPUTS / f"{batch_id}_highlights.json"
+        report_json.write_text(json.dumps({
+            "batch_id": batch_id,
+            "source_job_id": job_id,
+            "note": "Automatiskt urval är en uppskattning. Granska klippen och kontrollera rättigheter innan publicering.",
+            "highlights": highlights
+        }, ensure_ascii=False, indent=2), encoding="utf-8")
+        report_csv = OUTPUTS / f"{batch_id}_highlights.csv"
+        with report_csv.open("w", newline="", encoding="utf-8-sig") as handle:
+            writer = csv.DictWriter(handle, fieldnames=[
+                "type", "number", "start_seconds", "end_seconds", "score",
+                "reason", "categories", "matched_phrases", "transcript_excerpt"
+            ])
+            writer.writeheader()
+            for item in highlights:
+                row = dict(item)
+                row["categories"] = ", ".join(row["categories"])
+                row["matched_phrases"] = ", ".join(row["matched_phrases"])
+                writer.writerow(row)
+
         zip_path = OUTPUTS / f"{batch_id}_drafts.zip"
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             for item in results:
                 path = OUTPUTS / item["name"]
                 if path.is_file():
                     archive.write(path, arcname=item["name"])
+            archive.write(report_json, arcname="highlight-report.json")
+            archive.write(report_csv, arcname="highlight-report.csv")
         state.update({
             "status": "completed", "stage": "Klart",
             "zip_url": f"/api/batch/download/{batch_id}",
@@ -739,8 +786,23 @@ def get_batch_status(batch_id: str):
         "progress": round(state["completed"] / total * 100) if total else 0,
         "created": state.get("created"), "error": state.get("error"),
         "zip_url": state.get("zip_url"), "videos": state.get("results", []),
+        "highlights": state.get("highlights", []),
+        "report_url": f"/api/batch/report/{batch_id}" if state.get("status") == "completed" else None,
         "failed_files": state.get("failed_files", [])
     }
+
+
+@app.get("/api/batch/report/{batch_id}")
+def download_highlight_report(batch_id: str):
+    if not re.fullmatch(r"[a-f0-9]{12}", batch_id):
+        raise HTTPException(400, "Invalid batch ID")
+    state = BATCH_JOBS.get(batch_id)
+    if not state or state.get("status") != "completed":
+        raise HTTPException(404, "Highlight report is not ready")
+    path = OUTPUTS / f"{batch_id}_highlights.json"
+    if not path.is_file():
+        raise HTTPException(404, "Highlight report not found")
+    return FileResponse(path, media_type="application/json", filename="highlight-report.json")
 
 
 @app.get("/api/batch/download/{batch_id}")
