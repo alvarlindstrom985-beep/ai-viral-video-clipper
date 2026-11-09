@@ -316,6 +316,7 @@ runCleanupButton.addEventListener('click',async()=>{
     pendingCleanupCount=0;
   }catch(error){storageStatusEl.textContent=error.message;runCleanupButton.disabled=false}
 });
+document.querySelector('#checkStorage').click();
 async function loadBatchHistory(){
   const container=document.querySelector('#batchHistory');
   if(!container)return;
