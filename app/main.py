@@ -160,7 +160,7 @@ def write_word_karaoke_ass(batch_id: str, media_type: str, clip_number: int,
     for event_start, event_end, text in events:
         ass.append(f"Dialogue: 0,{ass_time(event_start)},{ass_time(event_end)},Default,,0,0,0,,{text}")
     path = OUTPUTS / f"{batch_id}_{media_type}_{clip_number:02d}_karaoke.ass"
-    path.write_text("\\n".join(ass) + "\\n", encoding="utf-8")
+    path.write_text("\n".join(ass) + "\n", encoding="utf-8")
     return path
 
 def ffmpeg_subtitle_filter(subtitle_path: Path, style: str, media_type: str):
