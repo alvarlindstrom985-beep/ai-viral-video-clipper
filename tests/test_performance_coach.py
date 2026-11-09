@@ -52,6 +52,30 @@ class PerformanceEditingCoachTests(unittest.TestCase):
         self.assertEqual({item["category"] for item in result}, {"Rage/ilska", "Humor/skratt"})
         self.assertEqual({item["age_cohort"] for item in result}, {"0–48 timmar", "2–7 dagar"})
 
+    def test_learned_variant_hint_maps_clip_signals_to_youtube_categories(self):
+        from app.main import learned_variant_hint
+        entries = []
+        for variant, score in (("v1", 60), ("v2", 85), ("v3", 70)):
+            for _ in range(3):
+                entries.append({
+                    "format": "short", "category": "Rage/ilska", "variant": variant,
+                    "measurement_age_hours": 24, "views": 1000,
+                    "performance_score": score
+                })
+        hint = learned_variant_hint(["Rage/ilska-signal"], "short", entries)
+        self.assertIsNotNone(hint)
+        self.assertEqual(hint["recommended_variant"], "v2")
+        self.assertEqual(hint["category"], "Rage/ilska")
+        self.assertEqual(hint["samples_per_variant"], {"v1": 3, "v2": 3, "v3": 3})
+
+    def test_learned_variant_hint_stays_empty_without_enough_data(self):
+        from app.main import learned_variant_hint
+        entries = [
+            {"format": "short", "category": "Humor/skratt", "variant": "v1",
+             "measurement_age_hours": 24, "views": 100, "performance_score": 90}
+        ] * 3
+        self.assertIsNone(learned_variant_hint(["Streamerhumor"], "short", entries))
+
     def test_summary_exposes_edit_recommendations(self):
         result = build_performance_summary(self.make_entries())
         self.assertTrue(result["edit_recommendations"])
