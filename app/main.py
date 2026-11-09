@@ -91,6 +91,45 @@ def write_clip_subtitles(job_id: str, clip_number: int, start: float, end: float
     return subtitle_path.name
 
 app = FastAPI(title="AI Viral Video Clipper")
+
+def write_batch_subtitles(batch_id: str, media_type: str, clip_number: int,
+                          start: float, end: float, transcript):
+    """Create a clip-local SRT file for optional burned-in captions."""
+    if not transcript:
+        return None
+    entries = [item for item in transcript if item["end"] > start and item["start"] < end]
+    lines = []
+    for number, item in enumerate(entries, 1):
+        local_start = max(0.0, item["start"] - start)
+        local_end = min(end - start, item["end"] - start)
+        if local_end <= local_start:
+            continue
+        lines.extend([
+            str(number),
+            f"{srt_timestamp(local_start)} --> {srt_timestamp(local_end)}",
+            item["text"].replace("-->", "→").strip(),
+            ""
+        ])
+    if not lines:
+        return None
+    subtitle_path = OUTPUTS / f"{batch_id}_{media_type}_{clip_number:02d}.srt"
+    subtitle_path.write_text("\\n".join(lines), encoding="utf-8")
+    return subtitle_path
+
+
+def ffmpeg_subtitle_filter(subtitle_path: Path, style: str, media_type: str):
+    """Build a safely escaped FFmpeg subtitles filter using a fixed style allowlist."""
+    styles = {
+        "classic": "FontName=Arial,FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,Bold=1,Alignment=2,MarginV=95",
+        "yellow": "FontName=Arial,FontSize=23,PrimaryColour=&H0000D7FF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,Bold=1,Alignment=2,MarginV=105",
+        "boxed": "FontName=Arial,FontSize=21,PrimaryColour=&H00FFFFFF,BackColour=&H90000000,BorderStyle=3,Outline=1,Shadow=0,Bold=1,Alignment=2,MarginV=90"
+    }
+    selected_style = styles.get(style, styles["classic"])
+    if media_type == "long":
+        selected_style = selected_style.replace("FontSize=22", "FontSize=18").replace("FontSize=23", "FontSize=19").replace("FontSize=21", "FontSize=17")
+    path = subtitle_path.resolve().as_posix().replace(":", r"\\:").replace("'", r"\\'")
+    return f"subtitles=filename='{path}':force_style='{selected_style}'"
+
 BATCH_JOBS = {}
 
 TWITCH_APP_TOKEN = {"value": None, "expires_at": 0}
@@ -577,7 +616,7 @@ def process_video(job_id: str, clip_count: int = 3, clip_length: int = 30):
     }
 
 
-def render_batch_job(batch_id, job_id, short_count, long_count, short_length, long_length):
+def render_batch_job(batch_id, job_id, short_count, long_count, short_length, long_length, burn_subtitles=True, subtitle_style='classic'):
     """Background worker. Progress is updated after each real export attempt."""
     state = BATCH_JOBS[batch_id]
     state["status"] = "running"
@@ -658,9 +697,16 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                         framing = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
                     else:
                         framing = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
+                    subtitle_path = write_batch_subtitles(
+                        batch_id, media_type, clip_index, candidate["start"],
+                        candidate["start"] + clip_duration, transcript
+                    ) if burn_subtitles else None
+                    video_filter = framing + "," + recipe["video_filter"]
+                    if subtitle_path:
+                        video_filter += "," + ffmpeg_subtitle_filter(subtitle_path, subtitle_style, media_type)
                     command = [
                         "ffmpeg", "-y", "-ss", str(candidate["start"]), "-i", str(source),
-                        "-t", str(clip_duration), "-vf", framing + "," + recipe["video_filter"],
+                        "-t", str(clip_duration), "-vf", video_filter,
                         "-c:v", "libx264", "-preset", "veryfast", "-crf", "23"
                     ]
                     if recipe["audio_filter"]:
@@ -680,7 +726,8 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                         "end": round(candidate["start"] + clip_duration, 1),
                         "duration": round(clip_duration, 1),
                         "score": round(candidate["score"], 2),
-                        "reason": candidate["reason"], "categories": candidate["categories"]
+                        "reason": candidate["reason"], "categories": candidate["categories"],
+                        "subtitles_burned": bool(subtitle_path)
                     })
                     state["results"] = results
 
@@ -712,6 +759,8 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                 path = OUTPUTS / item["name"]
                 if path.is_file():
                     archive.write(path, arcname=item["name"])
+            for subtitle_file in OUTPUTS.glob(f"{batch_id}_*.srt"):
+                archive.write(subtitle_file, arcname=f"subtitles/{subtitle_file.name}")
             archive.write(report_json, arcname="highlight-report.json")
             archive.write(report_csv, arcname="highlight-report.csv")
         state.update({
@@ -728,6 +777,8 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
             "visual_analysis_available": visual_samples is not None,
             "transcript_available": transcript is not None,
             "publishing": "manual_only",
+            "subtitles_burned": bool(burn_subtitles and transcript is not None),
+            "subtitle_style": subtitle_style,
             "note": "All exports are saved as drafts. Nothing is uploaded or published automatically. Variants use different intro effects and audio mastering, not different music tracks."
         })
     except Exception as exc:
@@ -742,7 +793,9 @@ def create_daily_batch(
     long_count: int = 5,
     variants: int = 3,
     short_length: int = 30,
-    long_length: int = 300
+    long_length: int = 300,
+    burn_subtitles: bool = True,
+    subtitle_style: str = "classic"
 ):
     """Queue a review-only batch and return immediately."""
     if not re.fullmatch(r"[a-f0-9]{12}", job_id):
@@ -755,6 +808,8 @@ def create_daily_batch(
         raise HTTPException(400, "Short length must be between 15 and 60 seconds")
     if not 180 <= long_length <= 600:
         raise HTTPException(400, "Long video length must be between 180 and 600 seconds")
+    if subtitle_style not in {"classic", "yellow", "boxed"}:
+        raise HTTPException(400, "Invalid subtitle style")
     if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
         raise HTTPException(500, "Install FFmpeg and make sure ffmpeg/ffprobe are on PATH")
     if not list(UPLOADS.glob(f"{job_id}.*")):
@@ -764,10 +819,12 @@ def create_daily_batch(
     BATCH_JOBS[batch_id] = {
         "batch_id": batch_id, "job_id": job_id, "status": "queued",
         "stage": "Väntar på start", "completed": 0, "total": 0,
-        "results": [], "created": None
+        "results": [], "created": None,
+        "burn_subtitles": burn_subtitles, "subtitle_style": subtitle_style
     }
     background_tasks.add_task(
-        render_batch_job, batch_id, job_id, short_count, long_count, short_length, long_length
+        render_batch_job, batch_id, job_id, short_count, long_count, short_length, long_length,
+        burn_subtitles, subtitle_style
     )
     return {"batch_id": batch_id, "status": "queued", "status_url": f"/api/batch/status/{batch_id}"}
 
