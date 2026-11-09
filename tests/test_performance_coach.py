@@ -48,7 +48,7 @@ class PerformanceEditingCoachTests(unittest.TestCase):
             item["category"] = "Humor/skratt"
             item["measurement_age_hours"] = 96
         result = generate_edit_recommendations(entries + other)
-        self.assertEqual(len(result), 6)
+        self.assertEqual(len(result), 8)
         self.assertEqual({item["category"] for item in result}, {"Rage/ilska", "Humor/skratt"})
         self.assertEqual({item["age_cohort"] for item in result}, {"0–48 timmar", "2–7 dagar"})
 
