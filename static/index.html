@@ -33,7 +33,7 @@
     <div><button id="run">Analysera video och skapa klipp</button></div>
     <p id="status">Redo. FFmpeg krävs. Installera tillvalet faster-whisper för talanalys.</p>
     <div id="clips" class="clips"></div>
-    <p class="notice">Analysen väger samman talaktivitet, reaktionsfraser och GTA-relaterade uttryck. Om Whisper är installerat får varje klipp även en separat undertextfil (.srt). Resultaten behöver granskas manuellt – ingen algoritm kan garantera viral spridning.</p>
+    <p class="notice">Analysen prioriterar streamerns humor, skratt och spontana reaktioner. GTA-händelser används som extra signal. Om Whisper är installerat får varje klipp även en separat undertextfil (.srt). Resultaten behöver granskas manuellt – ingen algoritm kan garantera viral spridning.</p>
   </section>
 </main>
 <script>
@@ -56,7 +56,7 @@ button.addEventListener('click',async()=>{
       const card=document.createElement('article');card.className='clip';
       const video=document.createElement('video');video.controls=true;video.playsInline=true;video.src=clip.url;
       const label=document.createElement('p');label.textContent='Klipp '+(i+1)+' · start '+clip.start+' s';
-      const score=document.createElement('p');score.className='score';score.textContent='Poäng: '+clip.score;
+      const score=document.createElement('p');score.className='score';score.textContent='Poäng: '+clip.score+' · Streamer: '+(clip.streamer_score||0)+' · GTA: '+(clip.game_score||0);
       const reason=document.createElement('p');reason.className='muted';reason.textContent=clip.reason;
       const links=document.createElement('div');links.className='links';
       const link=document.createElement('a');link.className='download';link.href=clip.url;link.download=clip.name;link.textContent='Ladda ner video';
@@ -66,7 +66,7 @@ button.addEventListener('click',async()=>{
         subtitleLink.href=clip.subtitle_url;subtitleLink.download=clip.subtitle_name;
         subtitleLink.textContent='Ladda ner undertexter (.srt)';links.append(subtitleLink);
       }
-      card.append(video,label,score,reason);
+      card.append(video,label,score,reason);\n      if(clip.categories && clip.categories.length){const category=document.createElement('p');category.className='muted';category.textContent='Typ: '+clip.categories.join(', ');card.append(category)}
       if(clip.matched_phrases && clip.matched_phrases.length){
         const tags=document.createElement('div');
         clip.matched_phrases.slice(0,5).forEach(phrase=>{const tag=document.createElement('span');tag.className='tag';tag.textContent=phrase;tags.append(tag)});
