@@ -57,7 +57,7 @@ Run a batch by uploading a source video in the dashboard. The API endpoint is `P
 **Manual publishing only:** this app does not connect to YouTube, TikTok, or Instagram and does not upload or publish anything. Every export is a draft for you to review and post yourself. The three audio variants use different audio processing; they do not add licensed or external music tracks.
 
 ## Important limitations
-This is an early MVP, not a trained viral prediction model. It does not visually understand GTA gameplay or reliably detect specific events such as kills, crashes, or mission completions. It creates separate SRT subtitle files when speech transcription is available; captions are not yet burned into the video. Streamer-humor and visual signals are heuristics, not true emotion recognition; sarcasm, facial expressions, webcam layout, visual jokes, and context can be missed. Scores should be reviewed before posting. Only upload videos you own or have permission to use.
+This is an early MVP, not a trained viral prediction model. It does not visually understand GTA gameplay or reliably detect specific events such as kills, crashes, or mission completions. It creates separate SRT subtitle files when speech transcription is available and can burn captions into the video when enabled and supported by FFmpeg. Streamer-humor and visual signals are heuristics, not true emotion recognition; sarcasm, facial expressions, webcam layout, visual jokes, and context can be missed. Scores should be reviewed before posting. Only upload videos you own or have permission to use.
 
 
 ## Twitch live monitoring (read-only)
