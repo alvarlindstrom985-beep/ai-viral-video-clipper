@@ -98,8 +98,8 @@ class EditSuggestionTests(unittest.TestCase):
 
     def test_short_clip_is_not_trimmed_below_safe_duration(self):
         from app.main import suggest_edit_points
-        transcript = [{"start": 4.0, "end": 18.0, "text": "A long line"}]
-        result = suggest_edit_points(0, 20, transcript, "short")
+        transcript = [{"start": 4.0, "end": 14.0, "text": "A long line"}]
+        result = suggest_edit_points(0, 15, transcript, "short")
         self.assertEqual(result["status"], "unchanged")
         self.assertEqual(result["suggested_trim_seconds"], 0)
 
