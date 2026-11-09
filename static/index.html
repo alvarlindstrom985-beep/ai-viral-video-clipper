@@ -38,6 +38,12 @@
       <label class="field">Längd på längre video
         <select id="longLength"><option value="180" selected>3 minuter</option><option value="240">4 minuter</option><option value="300">5 minuter</option><option value="420">7 minuter</option></select>
       </label>
+      <label class="field">Undertexter i videon
+        <select id="burnSubtitles"><option value="true" selected>Bränn in automatiskt</option><option value="false">Endast separat SRT</option></select>
+      </label>
+      <label class="field">Undertextstil
+        <select id="subtitleStyle"><option value="classic" selected>Vit text med svart kontur</option><option value="yellow">Gul highlight-stil</option><option value="boxed">Vit text med mörk bakgrund</option></select>
+      </label>
     </div>
     <p class="notice">Varje grundvideo får 3 versioner med olika introeffekt och ljudmix. Upp till 90 filer. En batch startas när du klickar – den schemaläggs inte automatiskt.</p>
     <button id="run">Skapa videobatch</button>
@@ -156,6 +162,9 @@ async function pollBatch(batchId){
       });
       resultsEl.insertBefore(highlightGrid,report);
       let summary='Klart! '+state.created.files+' filer skapade. Allt är redo för manuell publicering.';
+      if(state.subtitles_burned)summary+=' Undertexter är inbrända i videorna.';
+      else if(state.transcript_available)summary+=' Separata undertextfiler finns i ZIP-filen.';
+      else summary+=' Inget transkript kunde skapas, så inga undertexter lades till.';
       if(state.failed_files.length)summary+=' Misslyckade exporter: '+state.failed_files.length+'.';
       statusEl.textContent=summary;progress.value=100;progressText.textContent='Batchen är klar.';return;
     }
@@ -176,7 +185,9 @@ button.addEventListener('click',async()=>{
       long_count:document.querySelector('#longCount').value,
       variants:'3',
       short_length:document.querySelector('#shortLength').value,
-      long_length:document.querySelector('#longLength').value
+      long_length:document.querySelector('#longLength').value,
+      burn_subtitles:document.querySelector('#burnSubtitles').value,
+      subtitle_style:document.querySelector('#subtitleStyle').value
     });
     const response=await fetch('/api/batch/'+job.job_id+'?'+params.toString(),{method:'POST'});
     const queued=await response.json();if(!response.ok)throw new Error(queued.detail||'Kunde inte starta batchen');
