@@ -1,5 +1,6 @@
 from array import array
 import importlib.util
+import difflib
 import zipfile
 from pathlib import Path
 import math
@@ -541,6 +542,30 @@ def score_opening_hook(start: float, levels, transcript, hook_seconds: float = 3
     }
 
 
+
+def candidate_similarity(candidate, existing):
+    """Compare two candidate clips using time overlap and transcript similarity."""
+    start_a, end_a = candidate["start"], candidate["end"]
+    start_b, end_b = existing["start"], existing["end"]
+    intersection = max(0.0, min(end_a, end_b) - max(start_a, start_b))
+    shorter = max(0.001, min(end_a - start_a, end_b - start_b))
+    union = max(end_a, end_b) - min(start_a, start_b)
+    overlap_ratio = intersection / shorter
+    iou = intersection / max(0.001, union)
+    text_a = re.sub(r"[^a-z0-9åäö]+", " ", candidate.get("_similarity_text", "").lower()).strip()
+    text_b = re.sub(r"[^a-z0-9åäö]+", " ", existing.get("_similarity_text", "").lower()).strip()
+    text_ratio = difflib.SequenceMatcher(None, text_a, text_b).ratio() if text_a and text_b else 0.0
+    return {"time_iou": iou, "overlap_ratio": overlap_ratio, "text_similarity": text_ratio}
+
+
+def is_near_duplicate(candidate, existing):
+    """Reject near-identical time windows or highly similar overlapping transcripts."""
+    similarity = candidate_similarity(candidate, existing)
+    return similarity["time_iou"] >= 0.68 or (
+        similarity["overlap_ratio"] >= 0.35 and similarity["text_similarity"] >= 0.78
+    )
+
+
 def score_windows(duration: float, clip_len: float, levels, transcript, clip_count: int, visual_samples=None, allow_overlap=True, media_format='short'):
     latest_start = max(0.0, duration - clip_len)
     step = max(3.0, min(8.0, clip_len / 5))
@@ -662,6 +687,7 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
 
         scored.append({
             "start": start, "end": end, "score": score,
+            "_similarity_text": text,
             "learning_bonus": learning_bonus,
             "hook_score": hook_bonus,
             "hook_signals": hook["signals"],
@@ -693,16 +719,21 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
     scored.sort(key=lambda item: item["score"], reverse=True)
     selected = []
     for candidate in scored:
-        if all(candidate["end"] <= item["start"] or candidate["start"] >= item["end"] for item in selected):
-            selected.append(candidate)
+        # Do not fill the batch with near-identical moments just to reach the requested count.
+        if any(is_near_duplicate(candidate, item) for item in selected):
+            continue
+        if not allow_overlap and any(
+            candidate["end"] > item["start"] and candidate["start"] < item["end"]
+            for item in selected
+        ):
+            continue
+        selected.append(candidate)
         if len(selected) >= clip_count:
             break
-    if allow_overlap and len(selected) < clip_count:
-        for candidate in sorted(scored, key=lambda item: item["start"]):
-            if candidate not in selected:
-                selected.append(candidate)
-            if len(selected) >= clip_count:
-                break
+
+    # Internal transcript text is only used for duplicate detection, never returned to the UI.
+    for item in selected:
+        item.pop("_similarity_text", None)
     return sorted(selected, key=lambda item: item["score"], reverse=True)
 
 
@@ -1014,8 +1045,8 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
 def create_daily_batch(
     job_id: str,
     background_tasks: BackgroundTasks,
-    short_count: int = 25,
-    long_count: int = 5,
+    short_count: int = 8,
+    long_count: int = 1,
     variants: int = 3,
     short_length: int = 30,
     long_length: int = 300,
