@@ -193,3 +193,8 @@ The smart variant selector recommends V1, V2, or V3 only when each has at least 
 ### Klippgränser och reaktionsupptakt
 
 Urvalet väger nu även in om ett klipp riskerar att börja eller sluta mitt i ett transkriberat ord/segment. Det ger en mindre poängjustering och visar en varning i dashboarden. Om en upptäckt reaktionsankare har ungefär 1–6 sekunders upptakt inne i klippet kan modellen ge en liten bonus; reaktioner som börjar nästan direkt vid klippets start kan få avdrag. Detta är en heuristik baserad på transkriptets tidsstämplar och upptäckta ankare, inte en garanti för perfekt klippning. Granska alltid klippgränserna manuellt.
+
+
+### Payoff-tajming
+
+Urvalet bedömer nu även när en upptäckt reaktion eller händelse inträffar i klippet. Tydliga talbaserade reaktionsankare väger tyngre än ljudtoppar och visuella signaler. En payoff i ungefär 68–90 procent av klippet kan få en liten bonus, medan en händelse efter 94 procent kan få avdrag eftersom det riskerar att saknas utrymme efter reaktionen. Dashboarden visar poäng, signaltyp och ungefärlig position. Detta är en heuristik, inte en förståelse av hela videons berättelse.
