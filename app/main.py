@@ -564,6 +564,38 @@ def score_opening_hook(start: float, levels, transcript, hook_seconds: float = 3
 
 
 def candidate_similarity(candidate, existing):
+
+
+def retention_signal_score(hook_score: float, active_buckets: int,
+                           signal_families: int, payoff_score: float,
+                           speech_density: float):
+    """Estimate observable clip structure; this is not a prediction of real viewer retention."""
+    parts = {
+        "hook": min(max(hook_score, 0.0) / 12.0, 1.0) * 30.0,
+        "continuity": min(max(active_buckets, 0), 4) / 4.0 * 25.0,
+        "signal_variety": min(max(signal_families, 0), 6) / 6.0 * 15.0,
+        "payoff": min(max(payoff_score, 0.0) / 2.0, 1.0) * 15.0,
+        "speech_flow": min(max(speech_density, 0.0) / 1.2, 1.0) * 15.0,
+    }
+    score = round(sum(parts.values()))
+    reasons = []
+    if parts["hook"] >= 20:
+        reasons.append("stark öppning")
+    elif parts["hook"] < 8:
+        reasons.append("öppningen kan behöva snabbare kontext eller en tydligare krok")
+    if parts["continuity"] >= 18.75:
+        reasons.append("aktivitet genom större delen av klippet")
+    elif parts["continuity"] <= 6.25:
+        reasons.append("risk för lugna partier")
+    if parts["payoff"] >= 15:
+        reasons.append("reaktion eller payoff mot slutet")
+    if parts["signal_variety"] >= 10:
+        reasons.append("flera oberoende händelsesignaler")
+    if not reasons:
+        reasons.append("blandade tittarhållningssignaler")
+    label = "Starka signaler" if score >= 75 else "Lovande signaler" if score >= 55 else "Behöver manuell granskning"
+    return {"score": score, "label": label, "reasons": reasons, "components": {key: round(value, 1) for key, value in parts.items()}}
+
     """Compare two candidate clips using time overlap and transcript similarity."""
     start_a, end_a = candidate["start"], candidate["end"]
     start_b, end_b = existing["start"], existing["end"]
@@ -690,6 +722,10 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
         payoff_signal = payoff_signal or bool(LAUGHTER_PATTERN.search(payoff_text))
         payoff_score = 2.0 if payoff_signal else 0.0
 
+        retention = retention_signal_score(
+            hook_bonus, sum(bucket_activity), signal_families,
+            payoff_score, speech_density
+        )
         score += learning_bonus + hook_bonus + pacing_score + diversity_score + payoff_score
 
         matched_phrases = list(dict.fromkeys(funny_hits + reaction_hits + rage_hits + game_hits))
@@ -716,6 +752,10 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
             "signal_diversity_score": diversity_score,
             "signal_families": signal_families,
             "payoff_score": payoff_score,
+            "retention_score": retention["score"],
+            "retention_label": retention["label"],
+            "retention_reasons": retention["reasons"],
+            "retention_components": retention["components"],
             "viral_ranking_score": round(score, 2),
             "reason": " · ".join(reason_parts + (["stark öppning"] if hook_bonus >= 4 else []) + (["aktivt genom klippet"] if pacing_score >= 4.5 else []) + (["tydlig payoff mot slutet"] if payoff_score else [])),
             "audio_activity": round(audio_score, 3),
@@ -924,6 +964,14 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     "learning_bonus": candidate["learning_bonus"],
                     "hook_score": candidate.get("hook_score", 0.0),
                     "hook_signals": candidate.get("hook_signals", []),
+                    "retention_score": candidate.get("retention_score", 0),
+                    "retention_label": candidate.get("retention_label", "Ej bedömd"),
+                    "retention_reasons": candidate.get("retention_reasons", []),
+                    "retention_components": candidate.get("retention_components", {}),
+                    "pacing_buckets_active": candidate.get("pacing_buckets_active", 0),
+                    "signal_families": candidate.get("signal_families", 0),
+                    "signal_diversity_score": candidate.get("signal_diversity_score", 0),
+                    "payoff_score": candidate.get("payoff_score", 0),
                     "rage_phrases": candidate["rage_phrases"],
                     "transcript_excerpt": " ".join(nearby_text)[:1200]
                 })
