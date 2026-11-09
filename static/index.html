@@ -229,9 +229,9 @@ async function pollBatch(batchId){
         const aiReviewScore=document.createElement('p');aiReviewScore.className='score';
         aiReviewScore.textContent=aiReview.status==='completed'?'AI-granskning: '+(aiReview.score||0)+'/100 · '+(aiReview.verdict||'Bedömd'):'AI-granskning: '+(aiReview.message||'Inte tillgänglig');
         const aiSubscores=document.createElement('p');aiSubscores.className='muted';
-        aiSubscores.textContent=aiReview.status==='completed'?'Hook '+(aiReview.hook_score||0)+' · Begriplighet '+(aiReview.clarity_score||0)+' · Bildintresse '+(aiReview.visual_interest_score||0)+' · Payoff '+(aiReview.payoff_score||0)+' · Sammanhang '+(aiReview.story_coherence_score||0):'';
+        aiSubscores.textContent=aiReview.status==='completed'?'Hook '+(aiReview.hook_score||0)+' · Begriplighet '+(aiReview.clarity_score||0)+' · Bildintresse '+(aiReview.visual_interest_score||0)+' · Bildutsnitt '+(aiReview.framing_score||0)+' · Komposition '+(aiReview.composition_score||0)+' · Tydlighet utan överlägg '+(aiReview.overlay_clutter_score||0)+' · Payoff '+(aiReview.payoff_score||0)+' · Sammanhang '+(aiReview.story_coherence_score||0):'';
         const aiReviewDetails=document.createElement('p');aiReviewDetails.className='muted';
-        aiReviewDetails.textContent=aiReview.status==='completed'?((aiReview.strengths||[]).join(' · ')+(aiReview.weaknesses&&aiReview.weaknesses.length?' | Att förbättra: '+aiReview.weaknesses.join(' · '):'')+(aiReview.suggestion?' | Förslag: '+aiReview.suggestion:'')):'';
+        aiReviewDetails.textContent=aiReview.status==='completed'?((aiReview.strengths||[]).join(' · ')+(aiReview.weaknesses&&aiReview.weaknesses.length?' | Att förbättra: '+aiReview.weaknesses.join(' · '):'')+(aiReview.visual_warnings&&aiReview.visual_warnings.length?' | Visuella varningar: '+aiReview.visual_warnings.join(' · '):'')+(aiReview.suggestion?' | Förslag: '+aiReview.suggestion:'')):'';
         const hooks=moment.hook_options||{};
         const hookTitle=document.createElement('p');hookTitle.className='score';hookTitle.textContent='Hook-generator – tre alternativa inledningar';
         const hookList=document.createElement('p');hookList.className='muted';
