@@ -185,7 +185,7 @@ function addSection(title,items){
     const warnings=document.createElement('p');warnings.className='muted';warnings.textContent=(item.quality_warnings||[]).join(' · ')||'Inga automatiska varningar.';
     const diagnostics=item.quality_diagnostics||{};
     const diagnosticText=document.createElement('p');diagnosticText.className='muted';
-    diagnosticText.textContent='Kontroll: '+(diagnostics.black_seconds??'–')+' s svart bild · '+(diagnostics.freeze_seconds??'–')+' s frusen bild · ljudtopp '+(diagnostics.audio_peak_db??'–')+' dB';
+    diagnosticText.textContent='Kontroll: '+(diagnostics.black_seconds??'–')+' s svart bild · '+(diagnostics.freeze_seconds??'–')+' s frusen bild · ljudtopp '+(diagnostics.audio_peak_db??'–')+' dB'+((diagnostics.subtitle_layout||[]).some(x=>(x.warnings||[]).length)?' · kontrollera undertextplacering':'');
     const reason=document.createElement('p');reason.className='muted';reason.textContent=item.reason;
     const link=document.createElement('a');link.className='download';link.href=item.url;link.download=item.name;link.textContent='Ladda ner utkast';
     card.append(video,label,variant,score,quality,warnings,diagnosticText,reason,link);grid.append(card);
