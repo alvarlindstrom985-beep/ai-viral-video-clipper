@@ -845,6 +845,8 @@ def get_batch_status(batch_id: str):
         "zip_url": state.get("zip_url"), "videos": state.get("results", []),
         "highlights": state.get("highlights", []),
         "report_url": f"/api/batch/report/{batch_id}" if state.get("status") == "completed" else None,
+        "subtitles_burned": state.get("subtitles_burned", False),
+        "transcript_available": state.get("transcript_available", False),
         "failed_files": state.get("failed_files", [])
     }
 
