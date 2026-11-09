@@ -1353,7 +1353,8 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
 
         hook = score_opening_hook(start, levels, transcript)
         hook_bonus = hook["score"]
-        learning_bonus = learned_category_bonus(categories, media_format, learning_entries)\n        variant_hint = learned_variant_hint(categories, media_format, learning_entries, variant_recommendations)
+        learning_bonus = learned_category_bonus(categories, media_format, learning_entries)
+        variant_hint = learned_variant_hint(categories, media_format, learning_entries, variant_recommendations)
 
         # Measure whether activity is sustained across the clip, rather than one isolated spike.
         # Four buckets combine speech presence and audio activity; these are ranking hints, not
