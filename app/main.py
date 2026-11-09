@@ -9,6 +9,11 @@ import subprocess
 import tempfile
 import uuid
 import wave
+import json
+import os
+import time
+import urllib.parse
+import urllib.request
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -86,6 +91,74 @@ def write_clip_subtitles(job_id: str, clip_number: int, start: float, end: float
 
 app = FastAPI(title="AI Viral Video Clipper")
 BATCH_JOBS = {}
+
+TWITCH_APP_TOKEN = {"value": None, "expires_at": 0}
+
+def twitch_app_access_token():
+    """Get/cache a Twitch app token using official Client Credentials OAuth."""
+    client_id = os.getenv("TWITCH_CLIENT_ID", "").strip()
+    client_secret = os.getenv("TWITCH_CLIENT_SECRET", "").strip()
+    if not client_id or not client_secret:
+        raise HTTPException(503, "Twitch är inte konfigurerat. Lägg till TWITCH_CLIENT_ID och TWITCH_CLIENT_SECRET som miljövariabler.")
+    if TWITCH_APP_TOKEN["value"] and TWITCH_APP_TOKEN["expires_at"] > time.time() + 60:
+        return TWITCH_APP_TOKEN["value"]
+    payload = urllib.parse.urlencode({
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "grant_type": "client_credentials"
+    }).encode()
+    request = urllib.request.Request(
+        "https://id.twitch.tv/oauth2/token", data=payload, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=12) as response:
+            token_data = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        raise HTTPException(502, "Kunde inte ansluta till Twitch OAuth.") from exc
+    TWITCH_APP_TOKEN["value"] = token_data["access_token"]
+    TWITCH_APP_TOKEN["expires_at"] = time.time() + int(token_data.get("expires_in", 3600))
+    return TWITCH_APP_TOKEN["value"]
+
+
+@app.get("/api/streamers/live")
+def get_live_streamers(channels: str = ""):
+    """Read-only live status for channel logins; never downloads or records streams."""
+    names = list(dict.fromkeys(
+        item.strip().lower().lstrip("@")
+        for item in channels.split(",")
+        if item.strip()
+    ))
+    if not names or len(names) > 20 or any(not re.fullmatch(r"[a-z0-9_]{1,25}", name) for name in names):
+        raise HTTPException(400, "Ange 1–20 giltiga Twitch-kanalnamn, separerade med kommatecken.")
+    token = twitch_app_access_token()
+    client_id = os.getenv("TWITCH_CLIENT_ID", "").strip()
+    query = urllib.parse.urlencode([("user_login", name) for name in names])
+    request = urllib.request.Request(
+        "https://api.twitch.tv/helix/streams?" + query,
+        headers={"Client-ID": client_id, "Authorization": "Bearer " + token}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            data = json.loads(response.read().decode("utf-8")).get("data", [])
+    except Exception as exc:
+        raise HTTPException(502, "Kunde inte hämta live-status från Twitch.") from exc
+    live_by_login = {item["user_login"].lower(): item for item in data}
+    return {
+        "checked_at": int(time.time()),
+        "channels": [
+            {
+                "login": name,
+                "is_live": name in live_by_login,
+                "title": live_by_login[name].get("title", "") if name in live_by_login else "",
+                "game_name": live_by_login[name].get("game_name", "") if name in live_by_login else "",
+                "viewer_count": live_by_login[name].get("viewer_count", 0) if name in live_by_login else 0,
+                "started_at": live_by_login[name].get("started_at") if name in live_by_login else None,
+                "url": "https://www.twitch.tv/" + name
+            }
+            for name in names
+        ]
+    }
+
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
