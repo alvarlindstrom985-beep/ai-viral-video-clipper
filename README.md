@@ -98,3 +98,10 @@ The score is a heuristic based on optional speech transcription, audio activity,
 The highlight ranker gives additional weight to explicit rage/frustration phrases in the transcript, alongside laughter, spontaneous reaction phrases, speech density, audio activity, and weak visual cues. The highlight report includes a separate rage score and matched phrases for review.
 
 This is a heuristic signal, not reliable emotion recognition: transcription can be wrong, phrases can be sarcastic or playful, and loud audio alone is not treated as anger. Review clips before publishing and use source recordings you own or have permission to use.
+
+
+## YouTube performance feedback tracker
+
+The dashboard includes a manual YouTube Studio metrics tracker. Add a published video's format, content category, edit variant, views, engaged views, Shorts "stayed to watch", average view duration, average percentage viewed, long-form CTR, likes, comments, shares, and subscribers gained. The app stores entries in `outputs/performance.json` and compares category and edit-variant averages. It only shows a leading category or variant after at least three entries in that group.
+
+The comparison score is an internal heuristic, not a viral prediction. For useful comparisons, record metrics at roughly the same age after publishing (for example, after 48 hours) and compare Shorts with Shorts and long-form videos with long-form videos. This first version is manual; it does not connect to a Google account or import YouTube Analytics automatically.
