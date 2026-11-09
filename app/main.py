@@ -43,6 +43,15 @@ STREAMER_REACTION_PHRASES = {
     "KOM IGEN", "SERIÖST", "FAN", "ARE YOU KIDDING", "I CAN'T BELIEVE",
     "HOW DID I", "DID THAT JUST"
 }
+RAGE_PHRASES = {
+    "what the hell", "what the fuck", "are you kidding me", "you have got to be kidding",
+    "i am so done", "i'm so done", "im so done", "this is ridiculous",
+    "stop doing that", "shut up", "you ruined it", "i hate this",
+    "jag blir galen", "jag blir förbannad", "blir tokig", "lägg av",
+    "vad fan", "håll käften", "är du helt", "du skojar", "jag orkar inte",
+    "det här är löjligt", "nu räcker det", "sluta", "seriöst"
+}
+
 GAME_EVENT_PHRASES = {
     "mission", "heist", "wanted level", "five stars", "police", "cop",
     "explosion", "crash", "chase", "getaway", "busted", "survived",
@@ -426,8 +435,9 @@ def find_reaction_anchors(duration: float, levels, transcript, visual_samples=No
         text = item["text"].lower()
         funny = any(phrase in text for phrase in STREAMER_FUNNY_PHRASES)
         reaction = any(phrase in text.upper() for phrase in STREAMER_REACTION_PHRASES)
+        rage = any(phrase in text for phrase in RAGE_PHRASES)
         laughter = bool(LAUGHTER_PATTERN.search(text))
-        if funny or reaction or laughter:
+        if funny or reaction or rage or laughter:
             anchors.append({
                 "time": max(0.0, min(duration, (item["start"] + item["end"]) / 2)),
                 "kind": "speech"
@@ -487,6 +497,7 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
         upper_text = text.upper()
         funny_hits = [phrase for phrase in STREAMER_FUNNY_PHRASES if phrase in text]
         reaction_hits = [phrase for phrase in STREAMER_REACTION_PHRASES if phrase in upper_text]
+        rage_hits = [phrase for phrase in RAGE_PHRASES if phrase in text]
         game_hits = [phrase for phrase in GAME_EVENT_PHRASES if phrase in text]
         laughter_hits = len(LAUGHTER_PATTERN.findall(text))
         exclamations = sum(item["text"].count("!") for item in words)
@@ -500,16 +511,20 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
             + min(laughter_hits, 4) * 12 + min(exclamations, 5) * 2
             + min(questions, 4) * 1.5
         )
+        # Explicit rage phrases are a strong ranking signal; loud audio alone is not treated as anger.
+        rage_score = min(len(rage_hits) * 16, 48)
         game_score = len(game_hits) * 3
         speech_score = min(speech_density * 25, 18)
         audio_score_points = min(audio_score * 18, 12)
-        score = streamer_score + game_score + speech_score + audio_score_points + visual["visual_score"]
+        score = streamer_score + rage_score + game_score + speech_score + audio_score_points + visual["visual_score"]
 
         categories = []
         if funny_hits or laughter_hits:
             categories.append("Streamerhumor")
         if reaction_hits:
             categories.append("Streamerreaktion")
+        if rage_hits:
+            categories.append("Rage/ilska-signal")
         if visual["smile_samples"] > 0:
             categories.append("Visuell möjlig skrattreaktion")
         if game_hits:
@@ -517,12 +532,14 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
         if not categories and (speech_density > 0.35 or audio_score > 0.025):
             categories.append("Aktivt ögonblick")
 
-        matched_phrases = list(dict.fromkeys(funny_hits + reaction_hits + game_hits))
+        matched_phrases = list(dict.fromkeys(funny_hits + reaction_hits + rage_hits + game_hits))
         reason_parts = []
         if funny_hits or laughter_hits:
             reason_parts.append("rolig kommentar/skrattsignal")
         if reaction_hits:
             reason_parts.append("stark spontan reaktion")
+        if rage_hits:
+            reason_parts.append("rage/ilska-uttryck i transkriptet")
         if game_hits:
             reason_parts.append("GTA-relaterat uttryck")
         if not reason_parts:
@@ -535,6 +552,8 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
             "matched_phrases": matched_phrases,
             "categories": categories,
             "streamer_score": round(streamer_score, 2),
+            "rage_score": round(rage_score, 2),
+            "rage_phrases": rage_hits,
             "game_score": round(game_score, 2),
             "visual_score": visual["visual_score"],
             "smile_samples": visual["smile_samples"],
@@ -654,6 +673,8 @@ def process_video(job_id: str, clip_count: int = 3, clip_length: int = 30):
                 "matched_phrases": candidate["matched_phrases"],
                 "categories": candidate["categories"],
                 "streamer_score": candidate["streamer_score"],
+                "rage_score": candidate["rage_score"],
+                "rage_phrases": candidate["rage_phrases"],
                 "game_score": candidate["game_score"],
                 "visual_score": candidate["visual_score"],
                 "smile_samples": candidate["smile_samples"],
@@ -724,6 +745,8 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     "reason": candidate["reason"],
                     "categories": candidate["categories"],
                     "matched_phrases": candidate["matched_phrases"],
+                    "rage_score": candidate["rage_score"],
+                    "rage_phrases": candidate["rage_phrases"],
                     "transcript_excerpt": " ".join(nearby_text)[:1200]
                 })
         state["highlights"] = highlights
@@ -797,6 +820,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                         "end": round(candidate["start"] + clip_duration, 1),
                         "duration": round(clip_duration, 1),
                         "score": round(candidate["score"], 2),
+                        "rage_score": candidate["rage_score"],
                         "reason": candidate["reason"], "categories": candidate["categories"],
                         "subtitles_burned": bool(subtitle_path)
                     })
@@ -815,13 +839,14 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
         with report_csv.open("w", newline="", encoding="utf-8-sig") as handle:
             writer = csv.DictWriter(handle, fieldnames=[
                 "type", "number", "start_seconds", "end_seconds", "score",
-                "reason", "categories", "matched_phrases", "transcript_excerpt"
+                "reason", "categories", "matched_phrases", "rage_score", "rage_phrases", "transcript_excerpt"
             ])
             writer.writeheader()
             for item in highlights:
                 row = dict(item)
                 row["categories"] = ", ".join(row["categories"])
                 row["matched_phrases"] = ", ".join(row["matched_phrases"])
+                row["rage_phrases"] = ", ".join(row["rage_phrases"])
                 writer.writerow(row)
 
         zip_path = OUTPUTS / f"{batch_id}_drafts.zip"
