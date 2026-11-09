@@ -6,22 +6,34 @@
   <title>AI Viral Video Clipper</title>
   <style>
     *{box-sizing:border-box}body{margin:0;background:#10131b;color:#f4f6fb;font:16px system-ui,sans-serif}
-    main{max-width:900px;margin:50px auto;padding:24px}.panel{background:#1b2130;border:1px solid #30394d;border-radius:18px;padding:24px}
+    main{max-width:1000px;margin:48px auto;padding:24px}.panel{background:#1b2130;border:1px solid #30394d;border-radius:18px;padding:24px}
     h1{font-size:clamp(2rem,5vw,3.2rem);margin:0 0 8px}.muted{color:#aab4c8}
-    input,button{font:inherit;border-radius:10px;padding:12px}input{max-width:100%;background:#0f1420;color:white;border:1px solid #46516a}
+    input,select,button{font:inherit;border-radius:10px;padding:12px}input,select{max-width:100%;background:#0f1420;color:white;border:1px solid #46516a}
     button{background:#8b7cff;color:#111;font-weight:700;border:0;cursor:pointer;margin:8px 0}button:disabled{opacity:.5}
-    #status{margin:16px 0;color:#c7d0e2}.clips{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:20px}
+    #status{margin:16px 0;color:#c7d0e2}.settings{display:flex;gap:14px;flex-wrap:wrap;margin-top:18px}
+    .field{display:grid;gap:6px;color:#c7d0e2}.clips{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:20px}
     video{width:100%;max-height:480px;background:#000;border-radius:12px}.clip{background:#252d40;padding:12px;border-radius:14px}
+    .score{color:#b8aaff;font-weight:700}.download{color:#c9c2ff}
+    .notice{font-size:.9rem;color:#aab4c8;margin-top:20px}
   </style>
 </head>
 <body><main>
   <h1>AI Viral Video Clipper</h1>
-  <p class="muted">Ladda upp en video och skapa korta vertikala klipp.</p>
+  <p class="muted">Hitta intressanta ögonblick och skapa vertikala klipp för Shorts, Reels och TikTok.</p>
   <section class="panel">
-    <input id="video" type="file" accept="video/*">
-    <div><button id="run">Ladda upp och skapa klipp</button></div>
-    <p id="status">Redo. Kräver FFmpeg installerat på servern.</p>
+    <input id="video" type="file" accept="video/mp4,video/quicktime,video/x-matroska,video/webm">
+    <div class="settings">
+      <label class="field">Antal klipp
+        <select id="count"><option value="3">3 klipp</option><option value="5">5 klipp</option><option value="8">8 klipp</option></select>
+      </label>
+      <label class="field">Längd per klipp
+        <select id="length"><option value="20">20 sekunder</option><option value="30" selected>30 sekunder</option><option value="45">45 sekunder</option><option value="60">60 sekunder</option></select>
+      </label>
+    </div>
+    <div><button id="run">Analysera video och skapa klipp</button></div>
+    <p id="status">Redo. FFmpeg krävs. Installera tillvalet faster-whisper för talanalys.</p>
     <div id="clips" class="clips"></div>
+    <p class="notice">Analysen rangordnar kandidater med talaktivitet, reaktionsfraser och ljudnivå. Resultaten behöver granskas manuellt – ingen algoritm kan garantera viral spridning.</p>
   </section>
 </main>
 <script>
@@ -35,17 +47,21 @@ button.addEventListener('click',async()=>{
     const data=new FormData();data.append('video',fileInput.files[0]);
     const uploaded=await fetch('/api/upload',{method:'POST',body:data});
     const job=await uploaded.json();if(!uploaded.ok)throw new Error(job.detail||'Uppladdningen misslyckades');
-    statusEl.textContent='Skapar klipp...';
-    const response=await fetch('/api/process/'+job.job_id,{method:'POST'});
+    statusEl.textContent='Analyserar ljud och letar efter intressanta ögonblick. Det kan ta en stund...';
+    const count=document.querySelector('#count').value;
+    const length=document.querySelector('#length').value;
+    const response=await fetch('/api/process/'+job.job_id+'?clip_count='+count+'&clip_length='+length,{method:'POST'});
     const result=await response.json();if(!response.ok)throw new Error(result.detail||'Kunde inte skapa klipp');
     result.clips.forEach((clip,i)=>{
       const card=document.createElement('article');card.className='clip';
-      const video=document.createElement('video');video.controls=true;video.src=clip.url;
+      const video=document.createElement('video');video.controls=true;video.playsInline=true;video.src=clip.url;
       const label=document.createElement('p');label.textContent='Klipp '+(i+1)+' · start '+clip.start+' s';
-      const link=document.createElement('a');link.href=clip.url;link.download=clip.name;link.textContent='Ladda ner klippet';
-      card.append(video,label,link);clipsEl.append(card);
+      const score=document.createElement('p');score.className='score';score.textContent='Poäng: '+clip.score;
+      const reason=document.createElement('p');reason.className='muted';reason.textContent=clip.reason;
+      const link=document.createElement('a');link.className='download';link.href=clip.url;link.download=clip.name;link.textContent='Ladda ner klippet';
+      card.append(video,label,score,reason,link);clipsEl.append(card);
     });
-    statusEl.textContent=result.clips.length?'Klart! Granska klippen innan du publicerar.':result.note;
+    statusEl.textContent='Klart! Analys: '+result.analysis+'. '+result.note;
   }catch(error){statusEl.textContent=error.message}
   finally{button.disabled=false}
 });
