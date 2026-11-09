@@ -152,3 +152,9 @@ These are manual suggestions only: the renderer does not apply them, overwrite t
 Every selected highlight now receives up to three alternative opening text hooks: a direct quote, a reaction-led option, and a curiosity-led option. They are composed from words found in the clip transcript, not invented descriptions of unseen events. If no usable transcript is available, the app returns no hook options rather than fabricating a quote. The dashboard displays the alternatives for manual comparison.
 
 These are text suggestions only: they are not automatically burned into the video or published. Add the chosen line in your editor and check that it accurately represents the footage. The generator uses local templates and transcript cues; it does not make an extra paid AI request and does not predict which hook will perform best.
+
+## Channel-adaptive ranking
+
+The ranking can now make a small adjustment based on the channel's own saved YouTube results. It maps detected clip signals to the manually assigned performance categories, compares those results within the same format, and applies a bounded bonus or penalty only after at least three examples exist for a category. Small groups are statistically shrunk toward the format-wide average, and the dashboard displays the adjusted comparison and a confidence indicator. Variant/category recommendations also use this confidence-adjusted score.
+
+This is lightweight adaptive calibration, not a trained machine-learning model or a viral-view prediction. The adjustment is deliberately capped at 3 ranking points, and results are more useful when videos are compared at similar ages and with enough samples.
