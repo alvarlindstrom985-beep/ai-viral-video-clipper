@@ -475,6 +475,99 @@ def inspect_render_quality(path: Path, expected_duration: float, expected_width:
         "diagnostics": diagnostics
     }
 
+
+def inspect_ass_layout(path: Path, expected_width: int, expected_height: int):
+    """Check ASS canvas, style margins and approximate single-line text fit.
+
+    This is a conservative metadata check, not OCR or a guarantee that burned-in
+    captions avoid important gameplay elements.
+    """
+    result = {"checked": False, "warnings": [], "canvas": None, "styles": []}
+    if not path or not Path(path).is_file():
+        return result
+    try:
+        content = Path(path).read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeError):
+        result["warnings"].append("Undertextfilen kunde inte läsas")
+        return result
+
+    play_x = re.search(r"(?im)^PlayResX:\\s*(\\d+)", content)
+    play_y = re.search(r"(?im)^PlayResY:\\s*(\\d+)", content)
+    if not play_x or not play_y:
+        result["warnings"].append("Undertextens bildyta saknar giltig upplösning")
+        return result
+    width, height = int(play_x.group(1)), int(play_y.group(1))
+    result["checked"] = True
+    result["canvas"] = {"width": width, "height": height}
+    if (width, height) != (expected_width, expected_height):
+        result["warnings"].append("Undertextens bildyta matchar inte videons upplösning")
+
+    in_styles = False
+    style_format = []
+    styles = {}
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("["):
+            in_styles = stripped.lower() == "[v4+ styles]"
+            continue
+        if not in_styles:
+            continue
+        if stripped.lower().startswith("format:"):
+            style_format = [part.strip().lower() for part in stripped.split(":", 1)[1].split(",")]
+        elif stripped.lower().startswith("style:") and style_format:
+            values = [part.strip() for part in stripped.split(":", 1)[1].split(",")]
+            if len(values) == len(style_format):
+                styles[values[0]] = dict(zip(style_format, values))
+
+    for name, style in styles.items():
+        try:
+            font_size = float(style.get("fontsize", 0))
+            margin_l = int(style.get("marginl", 0))
+            margin_r = int(style.get("marginr", 0))
+            margin_v = int(style.get("marginv", 0))
+            alignment = int(style.get("alignment", 2))
+        except (TypeError, ValueError):
+            result["warnings"].append("En undertextstil har ogiltiga placeringsvärden")
+            continue
+        if font_size <= 0 or font_size > height * 0.12:
+            result["warnings"].append(f"Undertextstilen {name} har en ovanligt stor eller ogiltig textstorlek")
+        if margin_l < 0 or margin_r < 0 or margin_l + margin_r >= width * 0.35:
+            result["warnings"].append(f"Undertextstilen {name} har osäkra sidmarginaler")
+        if margin_v < 0 or margin_v > height * 0.30:
+            result["warnings"].append(f"Undertextstilen {name} har en ovanlig vertikal marginal")
+        result["styles"].append({
+            "name": name, "font_size": font_size, "margin_left": margin_l,
+            "margin_right": margin_r, "margin_vertical": margin_v,
+            "alignment": alignment
+        })
+
+    # Check explicit ASS line text against a rough average glyph width. This only
+    # flags likely overflow; actual font metrics and renderer wrapping can differ.
+    dialogue_lines = [line.split(",", 9)[-1] for line in content.splitlines()
+                      if line.startswith("Dialogue:") and line.count(",") >= 9]
+    for text_line in dialogue_lines:
+        plain = re.sub(r"\\{[^}]*\\}", "", text_line).strip()
+        if not plain:
+            continue
+        style_name = "Default"
+        for line in content.splitlines():
+            if line.startswith("Dialogue:"):
+                fields = line.split(",", 9)
+                if len(fields) == 10 and fields[-1] == text_line:
+                    style_name = fields[3]
+                    break
+        style = styles.get(style_name, next(iter(styles.values()), {}))
+        try:
+            font_size = float(style.get("fontsize", 0))
+            available = width - int(style.get("marginl", 0)) - int(style.get("marginr", 0))
+        except (TypeError, ValueError):
+            continue
+        if font_size and len(plain) * font_size * 0.58 > available:
+            result["warnings"].append("En hook-/undertextrad kan bli för bred för bildytan")
+            break
+    result["warnings"] = list(dict.fromkeys(result["warnings"]))
+    return result
+
 def normalize_ai_review(payload):
     """Validate and clamp structured reviewer output before it reaches the UI."""
     if not isinstance(payload, dict):
@@ -1722,6 +1815,15 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                         continue
                     expected_width, expected_height = (1080, 1920) if media_type == "short" else (1920, 1080)
                     quality = inspect_render_quality(out, clip_duration, expected_width, expected_height)
+                    subtitle_layout_checks = []
+                    for subtitle_asset in (subtitle_path, hook_ass_path):
+                        if subtitle_asset and Path(subtitle_asset).suffix.lower() == ".ass":
+                            layout = inspect_ass_layout(Path(subtitle_asset), expected_width, expected_height)
+                            if layout.get("checked"):
+                                subtitle_layout_checks.append(layout)
+                                quality["warnings"].extend(layout.get("warnings", []))
+                    quality["warnings"] = list(dict.fromkeys(quality["warnings"]))
+                    quality.setdefault("diagnostics", {})["subtitle_layout"] = subtitle_layout_checks
                     quality_checks.append({"name": filename, **quality})
                     if not quality["passed"]:
                         failures.append(filename)
@@ -1743,7 +1845,8 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                         "hook_style": hook_list[hook_index].get("style") if hook_ass_path else None,
                         "quality_passed": quality["passed"],
                         "quality_warnings": quality.get("warnings", []),
-                        "quality_diagnostics": quality.get("diagnostics", {})
+                        "quality_diagnostics": quality.get("diagnostics", {}),
+                        "subtitle_layout_checks": subtitle_layout_checks
                     })
                     state["results"] = results
                     save_batch_job(batch_id, state)
