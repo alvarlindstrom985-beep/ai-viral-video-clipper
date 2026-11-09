@@ -216,7 +216,7 @@ async function pollBatch(batchId){
         card.append(label,timing,score,hook,pacing,diversity,payoff,rage,learning,ragePhrases,reason,excerpt);highlightGrid.append(card);
       });
       resultsEl.insertBefore(highlightGrid,report);
-      let summary='Klart! '+state.created.files+' filer skapade. Allt är redo för manuell publicering.';
+      let summary='Klart! '+state.created.files+' filer klarade teknisk kvalitetskontroll. '+(state.quality_rejected||0)+' exporter underkändes och togs bort. Allt är redo för manuell granskning före publicering.';
       if(state.subtitles_burned)summary+=' Undertexter är inbrända i videorna.';
       else if(state.transcript_available)summary+=' Separata undertextfiler finns i ZIP-filen.';
       else summary+=' Inget transkript kunde skapas, så inga undertexter lades till.';
