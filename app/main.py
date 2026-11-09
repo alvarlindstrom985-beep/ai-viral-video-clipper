@@ -1358,6 +1358,41 @@ def payoff_timing_quality(start: float, end: float, anchors=None):
 
 
 
+def storyline_arc_quality(start: float, end: float, transcript, anchors=None):
+    """Estimate setup -> event -> aftermath continuity from timestamped transcript and reaction anchors."""
+    segments = [
+        item for item in (transcript or [])
+        if isinstance(item, dict) and "start" in item and "end" in item
+        and item.get("text", "").strip()
+        and float(item["end"]) > start and float(item["start"]) < end
+    ]
+    events = [item for item in (anchors or []) if start <= float(item.get("time", -1)) <= end]
+    if not events:
+        return {"score": 0, "label": "ingen tydlig händelsekedja",
+                "has_setup": False, "has_event": False, "has_aftermath": False,
+                "event_time": None, "steps": []}
+    best = None
+    for event in events:
+        timestamp = float(event["time"])
+        before = [item for item in segments if 0.5 <= timestamp - (float(item["start"]) + float(item["end"])) / 2 <= 7.0]
+        after = [item for item in segments if 0.3 <= (float(item["start"]) + float(item["end"])) / 2 - timestamp <= 5.0]
+        has_setup = bool(before)
+        has_event = event.get("kind") in {"speech", "audio", "visual"}
+        has_aftermath = bool(after) or any(
+            other is not event and timestamp < float(other.get("time", -1)) <= min(end, timestamp + 4.0)
+            for other in events
+        )
+        score = (3 if has_setup else -1) + (3 if has_event else 0) + (3 if has_aftermath else -1)
+        steps = (["uppladdning"] if has_setup else []) + ["händelse/reaktion"] + (["efterspel"] if has_aftermath else [])
+        candidate = {"score": score, "label": " → ".join(steps),
+                     "has_setup": has_setup, "has_event": has_event,
+                     "has_aftermath": has_aftermath, "event_time": round(timestamp, 2),
+                     "steps": steps}
+        if best is None or candidate["score"] > best["score"]:
+            best = candidate
+    return best
+
+
 def score_windows(duration: float, clip_len: float, levels, transcript, clip_count: int, visual_samples=None, allow_overlap=True, media_format='short'):
     latest_start = max(0.0, duration - clip_len)
     step = max(3.0, min(8.0, clip_len / 5))
@@ -1473,12 +1508,14 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
         payoff_score = 2.0 if payoff_signal else 0.0
         payoff_timing = payoff_timing_quality(start, end, anchors)
         payoff_timing_score = payoff_timing["score"]
+        storyline = storyline_arc_quality(start, end, transcript, anchors)
+        storyline_score = storyline["score"]
 
         retention = retention_signal_score(
             hook_bonus, sum(bucket_activity), signal_families,
             payoff_score, speech_density
         )
-        score += learning_bonus + hook_bonus + pacing_score + diversity_score + payoff_score + boundary_score + payoff_timing_score
+        score += learning_bonus + hook_bonus + pacing_score + diversity_score + payoff_score + boundary_score + payoff_timing_score + storyline_score
 
         matched_phrases = list(dict.fromkeys(funny_hits + reaction_hits + rage_hits + game_hits))
         reason_parts = []
@@ -1508,6 +1545,13 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
             "payoff_timing_reason": payoff_timing["reason"],
             "payoff_anchor_kind": payoff_timing["anchor_kind"],
             "payoff_position": payoff_timing["position"],
+            "storyline_score": storyline_score,
+            "storyline_label": storyline["label"],
+            "storyline_steps": storyline["steps"],
+            "storyline_has_setup": storyline["has_setup"],
+            "storyline_has_event": storyline["has_event"],
+            "storyline_has_aftermath": storyline["has_aftermath"],
+            "storyline_event_time": storyline["event_time"],
             "boundary_quality_score": boundary_score,
             "boundary_quality_reasons": boundary["reasons"],
             "speech_cut_at_start": boundary["speech_cut_at_start"],
@@ -1517,7 +1561,7 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
             "retention_reasons": retention["reasons"],
             "retention_components": retention["components"],
             "viral_ranking_score": round(score, 2),
-            "reason": " · ".join(reason_parts + (["stark öppning"] if hook_bonus >= 4 else []) + (["aktivt genom klippet"] if pacing_score >= 4.5 else []) + (["tydlig payoff mot slutet"] if payoff_score else []) + ([payoff_timing["reason"]] if payoff_timing["reason"] else []) + boundary["reasons"]),
+            "reason": " · ".join(reason_parts + (["stark öppning"] if hook_bonus >= 4 else []) + (["aktivt genom klippet"] if pacing_score >= 4.5 else []) + (["tydlig payoff mot slutet"] if payoff_score else []) + ([payoff_timing["reason"]] if payoff_timing["reason"] else []) + boundary["reasons"] + (["sammanhängande händelsekedja: " + storyline["label"]] if storyline_score >= 7 else [])),
             "audio_activity": round(audio_score, 3),
             "matched_phrases": matched_phrases,
             "categories": categories,
@@ -1779,6 +1823,13 @@ def process_video(job_id: str, clip_count: int = 3, clip_length: int = 30):
                 "reaction_anchor": round(candidate["reaction_anchor"], 1) if candidate["reaction_anchor"] is not None else None,
                 "score": round(candidate["score"], 2),
                 "reason": candidate["reason"],
+                "storyline_score": candidate["storyline_score"],
+                "storyline_label": candidate["storyline_label"],
+                "storyline_steps": candidate["storyline_steps"],
+                "storyline_has_setup": candidate["storyline_has_setup"],
+                "storyline_has_event": candidate["storyline_has_event"],
+                "storyline_has_aftermath": candidate["storyline_has_aftermath"],
+                "storyline_event_time": candidate["storyline_event_time"],
                 "matched_phrases": candidate["matched_phrases"],
                 "categories": candidate["categories"],
                 "streamer_score": candidate["streamer_score"],
