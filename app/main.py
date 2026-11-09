@@ -757,6 +757,11 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                         framing = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
                     subtitle_path = None
                     if transcript:
+                        # Keep a conventional SRT sidecar for editing/accessibility in every mode.
+                        write_batch_subtitles(
+                            batch_id, media_type, clip_index, candidate["start"],
+                            candidate["start"] + clip_duration, transcript
+                        )
                         if caption_mode == "word_by_word":
                             subtitle_path = write_word_karaoke_ass(
                                 batch_id, media_type, clip_index, candidate["start"],
