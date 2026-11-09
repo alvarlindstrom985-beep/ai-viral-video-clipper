@@ -1000,7 +1000,7 @@ def download_highlight_report(batch_id: str):
 
 
 PERFORMANCE_CATEGORIES = {
-    "Rage/ilska", "Stark reaktion", "Humor/sk skratt", "GTA-händelse", "Annat"
+    "Rage/ilska", "Stark reaktion", "Humor/skratt", "GTA-händelse", "Annat"
 }
 PERFORMANCE_FORMATS = {"short", "long"}
 PERFORMANCE_VARIANTS = {"v1", "v2", "v3"}
