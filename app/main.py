@@ -157,7 +157,96 @@ def transcribe_audio(source: Path):
         return None
 
 
-def score_windows(duration: float, clip_len: float, levels, transcript, clip_count: int):
+
+def analyze_visual_reactions(source: Path):
+    """Optional webcam-face analysis using OpenCV Haar cascades.
+    Returns coarse face/smile/movement cues sampled every 1.5 seconds.
+    It does not identify people or reliably infer emotions.
+    """
+    try:
+        import cv2
+    except ImportError:
+        return None
+
+    capture = cv2.VideoCapture(str(source))
+    if not capture.isOpened():
+        return None
+    face_xml = Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"
+    smile_xml = Path(cv2.data.haarcascades) / "haarcascade_smile.xml"
+    face_detector = cv2.CascadeClassifier(str(face_xml))
+    smile_detector = cv2.CascadeClassifier(str(smile_xml))
+    if face_detector.empty():
+        capture.release()
+        return None
+
+    samples = []
+    previous_gray = None
+    fps = capture.get(cv2.CAP_PROP_FPS) or 25.0
+    frame_step = max(1, int(fps * 1.5))
+    frame_index = 0
+    while True:
+        ok, frame = capture.read()
+        if not ok:
+            break
+        if frame_index % frame_step == 0:
+            height, width = frame.shape[:2]
+            scale = min(1.0, 640.0 / max(width, height))
+            if scale < 1.0:
+                frame = cv2.resize(frame, (int(width * scale), int(height * scale)))
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            gray = cv2.equalizeHist(gray)
+            faces = face_detector.detectMultiScale(
+                gray, scaleFactor=1.1, minNeighbors=5, minSize=(36, 36)
+            )
+            smile_count = 0
+            largest_face = 0.0
+            for (x, y, w, h) in faces:
+                largest_face = max(largest_face, (w * h) / max(1, gray.shape[0] * gray.shape[1]))
+                if smile_detector.empty():
+                    continue
+                lower_face = gray[y + int(h * 0.35):y + h, x:x + w]
+                if lower_face.size:
+                    smiles = smile_detector.detectMultiScale(
+                        lower_face, scaleFactor=1.7, minNeighbors=18,
+                        minSize=(max(12, w // 5), max(8, h // 12))
+                    )
+                    smile_count += len(smiles)
+            motion = 0.0
+            if previous_gray is not None and previous_gray.shape == gray.shape:
+                motion = float(cv2.absdiff(gray, previous_gray).mean()) / 255.0
+            previous_gray = gray
+            timestamp = frame_index / fps
+            samples.append({
+                "time": timestamp,
+                "faces": len(faces),
+                "smiles": min(smile_count, 2),
+                "face_area": largest_face,
+                "motion": motion
+            })
+        frame_index += 1
+    capture.release()
+    return samples
+
+
+def visual_window_signals(visual_samples, start: float, end: float):
+    if not visual_samples:
+        return {"visual_score": 0.0, "smile_samples": 0, "face_samples": 0, "motion_score": 0.0}
+    selected = [sample for sample in visual_samples if start <= sample["time"] <= end]
+    if not selected:
+        return {"visual_score": 0.0, "smile_samples": 0, "face_samples": 0, "motion_score": 0.0}
+    smile_samples = sum(1 for sample in selected if sample["smiles"] > 0)
+    face_samples = sum(1 for sample in selected if sample["faces"] > 0)
+    motion_score = sum(sample["motion"] for sample in selected) / len(selected)
+    # Smile detections are a weak positive cue; movement only provides context.
+    visual_score = min(smile_samples * 3.0, 12.0) + min(motion_score * 20.0, 4.0)
+    return {
+        "visual_score": round(visual_score, 2),
+        "smile_samples": smile_samples,
+        "face_samples": face_samples,
+        "motion_score": round(motion_score, 3)
+    }
+
+def score_windows(duration: float, clip_len: float, levels, transcript, clip_count: int, visual_samples=None):
     latest_start = max(0.0, duration - clip_len)
     step = max(3.0, min(8.0, clip_len / 5))
     starts = []
@@ -184,6 +273,7 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
         exclamations = sum(item["text"].count("!") for item in words)
         questions = sum(item["text"].count("?") for item in words)
         speech_density = word_count / max(clip_len, 1)
+        visual = visual_window_signals(visual_samples, start, end)
 
         # Streamer personality is the primary signal; GTA keywords are secondary.
         streamer_score = (
@@ -194,13 +284,15 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
         game_score = len(game_hits) * 3
         speech_score = min(speech_density * 25, 18)
         audio_score_points = min(audio_score * 18, 12)
-        score = streamer_score + game_score + speech_score + audio_score_points
+        score = streamer_score + game_score + speech_score + audio_score_points + visual["visual_score"]
 
         categories = []
         if funny_hits or laughter_hits:
             categories.append("Streamerhumor")
         if reaction_hits:
             categories.append("Streamerreaktion")
+        if visual["smile_samples"] > 0:
+            categories.append("Visuell möjlig skrattreaktion")
         if game_hits:
             categories.append("GTA-händelse")
         if not categories and (speech_density > 0.35 or audio_score > 0.025):
@@ -224,7 +316,11 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
             "matched_phrases": matched_phrases,
             "categories": categories,
             "streamer_score": round(streamer_score, 2),
-            "game_score": round(game_score, 2)
+            "game_score": round(game_score, 2),
+            "visual_score": visual["visual_score"],
+            "smile_samples": visual["smile_samples"],
+            "face_samples": visual["face_samples"],
+            "motion_score": visual["motion_score"]
         })
 
     scored.sort(key=lambda item: item["score"], reverse=True)
@@ -301,7 +397,8 @@ def process_video(job_id: str, clip_count: int = 3, clip_length: int = 30):
     actual_clip_len = min(float(clip_length), duration)
     levels = audio_levels(source)
     transcript = transcribe_audio(source)
-    candidates = score_windows(duration, actual_clip_len, levels, transcript, clip_count)
+    visual_samples = analyze_visual_reactions(source)
+    candidates = score_windows(duration, actual_clip_len, levels, transcript, clip_count, visual_samples)
 
     results = []
     for index, candidate in enumerate(candidates, 1):
@@ -329,7 +426,10 @@ def process_video(job_id: str, clip_count: int = 3, clip_length: int = 30):
                 "matched_phrases": candidate["matched_phrases"],
                 "categories": candidate["categories"],
                 "streamer_score": candidate["streamer_score"],
-                "game_score": candidate["game_score"]
+                "game_score": candidate["game_score"],
+                "visual_score": candidate["visual_score"],
+                "smile_samples": candidate["smile_samples"],
+                "face_samples": candidate["face_samples"]
             })
 
     if not results:
@@ -339,7 +439,8 @@ def process_video(job_id: str, clip_count: int = 3, clip_length: int = 30):
         "job_id": job_id,
         "clips": results,
         "analysis": method,
-        "ranking_focus": "Streamerhumor och reaktioner prioriteras före GTA-händelser",
+        "ranking_focus": "Streamerhumor, reaktioner och visuella skrattindikatorer prioriteras",
+        "visual_analysis_available": visual_samples is not None,
         "transcript_available": transcript is not None,
         "note": "Scores are heuristic estimates, not a guarantee that a clip will go viral."
     }
