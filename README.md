@@ -86,6 +86,10 @@ Choose **Only separate SRT** to keep captions as separate subtitle files instead
 
 Captions are generated from automatic speech recognition and can contain mistakes. Review spelling, timing, and readability before publishing.
 
+## Diversity-aware batch selection
+
+Batch selection now uses a greedy, score-first pass with a small soft penalty when a new candidate repeats a category already represented in the batch. Strongest candidates remain prioritized, while close-scoring alternatives can improve category variety. Existing near-duplicate and non-overlap checks still apply, and the selector fills remaining slots when only one category is available. Each selected highlight includes a short selection reason and the diversity adjustment for review. This is a ranking heuristic, not a guarantee of varied or engaging content.
+
 ## Automatic highlight selection and review report
 
 When you upload a source recording and start a batch, the analysis selects the highest-scoring non-overlapping moments for Shorts and longer edits. The dashboard now lists each selected moment with source timestamps, score, reason, categories, and a transcript excerpt when available. The ZIP also includes `highlight-report.json` and `highlight-report.csv` so you can review or edit the timeline separately.
