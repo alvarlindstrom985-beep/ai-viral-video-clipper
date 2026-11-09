@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from app.main import normalize_csv_header, parse_csv_metric, candidate_similarity, is_near_duplicate, retention_signal_score, normalize_ai_review, learning_group_score, learned_category_bonus
+from app.main import normalize_csv_header, parse_csv_metric, candidate_similarity, is_near_duplicate, retention_signal_score, normalize_ai_review, learning_group_score, learned_category_bonus, performance_age_cohort, parse_publish_age_hours, build_performance_summary
 
 
 class YouTubeCsvMetricTests(unittest.TestCase):
@@ -20,6 +20,37 @@ class YouTubeCsvMetricTests(unittest.TestCase):
     def test_swedish_header_normalization(self):
         self.assertEqual(normalize_csv_header("Genomsnittlig visningsprocent (%)"), "genomsnittligvisningsprocent")
 
+
+
+class PublicationAgeLearningTests(unittest.TestCase):
+    def test_age_cohorts_have_expected_boundaries(self):
+        self.assertEqual(performance_age_cohort(24), "0–48 timmar")
+        self.assertEqual(performance_age_cohort(72), "2–7 dagar")
+        self.assertEqual(performance_age_cohort(400), "7–30 dagar")
+        self.assertEqual(performance_age_cohort(1000), "30+ dagar")
+        self.assertIsNone(performance_age_cohort(None))
+
+    def test_publish_date_is_converted_to_age_hours(self):
+        from datetime import datetime, timezone
+        now = datetime(2026, 11, 9, 12, 0, tzinfo=timezone.utc)
+        age = parse_publish_age_hours("2026-11-07T12:00:00Z", now=now)
+        self.assertEqual(age, 48.0)
+
+    def test_summary_compares_categories_within_age_cohorts(self):
+        entries = []
+        for category, score in (("Rage/ilska", 90), ("Humor/skratt", 40)):
+            for index in range(3):
+                entries.append({
+                    "category": category, "variant": "v1", "format": "short",
+                    "measurement_age_hours": 24, "performance_score": score,
+                    "views": 100, "average_view_percentage": 80,
+                    "stayed_to_watch_pct": 70
+                })
+        insights = build_performance_summary(entries)
+        self.assertEqual(insights["videos_with_age_data"], 6)
+        self.assertEqual(len(insights["age_cohorts"]), 1)
+        self.assertEqual(len(insights["age_comparisons"]), 2)
+        self.assertEqual(insights["age_comparisons"][0]["age_cohort"], "0–48 timmar")
 
 
 class AdaptiveLearningTests(unittest.TestCase):
