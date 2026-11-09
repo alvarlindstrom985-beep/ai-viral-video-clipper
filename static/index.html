@@ -215,6 +215,10 @@ async function pollBatch(batchId){
         aiSubscores.textContent=aiReview.status==='completed'?'Hook '+(aiReview.hook_score||0)+' · Begriplighet '+(aiReview.clarity_score||0)+' · Bildintresse '+(aiReview.visual_interest_score||0)+' · Payoff '+(aiReview.payoff_score||0)+' · Sammanhang '+(aiReview.story_coherence_score||0):'';
         const aiReviewDetails=document.createElement('p');aiReviewDetails.className='muted';
         aiReviewDetails.textContent=aiReview.status==='completed'?((aiReview.strengths||[]).join(' · ')+(aiReview.weaknesses&&aiReview.weaknesses.length?' | Att förbättra: '+aiReview.weaknesses.join(' · '):'')+(aiReview.suggestion?' | Förslag: '+aiReview.suggestion:'')):'';
+        const hooks=moment.hook_options||{};
+        const hookTitle=document.createElement('p');hookTitle.className='score';hookTitle.textContent='Hook-generator – tre alternativa inledningar';
+        const hookList=document.createElement('p');hookList.className='muted';
+        hookList.textContent=(hooks.options||[]).map((option,index)=>(index+1)+'. '+option.style+': '+option.text+' ('+option.reason+')').join(' | ')||(hooks.note||'Inga hook-förslag tillgängliga.');
         const edits=moment.edit_suggestions||{};
         const editTitle=document.createElement('p');editTitle.className='score';editTitle.textContent='Redigeringsassistent – manuella förslag';
         const editTiming=document.createElement('p');editTiming.className='pill';editTiming.textContent='Föreslagna tider: '+(edits.recommended_start_seconds??moment.start_seconds)+'s – '+(edits.recommended_end_seconds??moment.end_seconds)+'s · '+(edits.suggested_trim_seconds||0)+'s kortare';
@@ -226,7 +230,7 @@ async function pollBatch(batchId){
         const ragePhrases=document.createElement('p');ragePhrases.className='muted';ragePhrases.textContent=(moment.rage_phrases||[]).length?'Uppfattade uttryck: '+moment.rage_phrases.join(', '):'Ingen tydlig rage-fras hittades';
         const reason=document.createElement('p');reason.className='muted';reason.textContent=moment.reason;
         const excerpt=document.createElement('p');excerpt.className='muted';excerpt.textContent=moment.transcript_excerpt||'Inget transkript tillgängligt.';
-        card.append(label,timing,score,retention,retentionReasons,aiReviewScore,aiSubscores,aiReviewDetails,editTitle,editTiming,editNotes,hook,pacing,diversity,payoff,rage,learning,ragePhrases,reason,excerpt);highlightGrid.append(card);
+        card.append(label,timing,score,retention,retentionReasons,aiReviewScore,aiSubscores,aiReviewDetails,hookTitle,hookList,editTitle,editTiming,editNotes,hook,pacing,diversity,payoff,rage,learning,ragePhrases,reason,excerpt);highlightGrid.append(card);
       });
       resultsEl.insertBefore(highlightGrid,report);
       let summary='Klart! '+state.created.files+' filer klarade teknisk kvalitetskontroll. '+(state.quality_rejected||0)+' exporter underkändes och togs bort. Allt är redo för manuell granskning före publicering.';
