@@ -1457,8 +1457,11 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
         with report_csv.open("w", newline="", encoding="utf-8-sig") as handle:
             writer = csv.DictWriter(handle, fieldnames=[
                 "type", "number", "start_seconds", "end_seconds", "score",
-                "reason", "categories", "matched_phrases", "rage_score", "learning_bonus", "rage_phrases", "transcript_excerpt"
-            ])
+                "reason", "categories", "matched_phrases", "rage_score", "learning_bonus",
+                "selection_reason", "selection_diversity_adjustment", "hook_score",
+                "retention_score", "retention_label", "payoff_score",
+                "rage_phrases", "transcript_excerpt"
+            ], extrasaction="ignore")
             writer.writeheader()
             for item in highlights:
                 row = dict(item)
