@@ -27,10 +27,10 @@
     </label>
     <div class="settings">
       <label class="field">Shorts per batch
-        <select id="shortCount"><option value="25" selected>25 Shorts</option><option value="15">15 Shorts</option><option value="10">10 Shorts</option></select>
+        <select id="shortCount"><option value="8" selected>8 Shorts – rekommenderat</option><option value="5">5 Shorts</option><option value="10">10 Shorts</option><option value="15">15 Shorts</option></select>
       </label>
       <label class="field">Längre videor per batch
-        <select id="longCount"><option value="5" selected>5 videor</option><option value="3">3 videor</option><option value="0">Inga</option></select>
+        <select id="longCount"><option value="1" selected>1 video – rekommenderat</option><option value="0">Inga</option><option value="2">2 videor</option><option value="3">3 videor</option></select>
       </label>
       <label class="field">Längd på varje Short
         <select id="shortLength"><option value="20">20 sekunder</option><option value="30" selected>30 sekunder</option><option value="45">45 sekunder</option><option value="60">60 sekunder</option></select>
@@ -48,7 +48,7 @@
         <select id="captionMode"><option value="word_by_word" selected>Ord för ord – karaoke-markering</option><option value="sentence">Vanliga meningar</option></select>
       </label>
     </div>
-    <p class="notice">Urvalet ger extra vikt åt tydliga rage-/ilska-uttryck i transkriptet och starka spontana reaktioner. Hög ljudnivå ensam räknas inte som ilska. Varje grundvideo får 3 versioner med olika introeffekt och ljudmix. Upp till 90 filer. En batch startas när du klickar – den schemaläggs inte automatiskt.</p>
+    <p class="notice">Urvalet ger extra vikt åt tydliga rage-/ilska-uttryck i transkriptet och starka spontana reaktioner. Hög ljudnivå ensam räknas inte som ilska. Standard är 8 Shorts och 1 längre video. Nästan identiska klipp filtreras bort, så batchen kan bli mindre om källmaterialet saknar tillräckligt många unika höjdpunkter. Varje grundvideo får 3 versioner med olika introeffekt och ljudmix. En batch startas när du klickar – den schemaläggs inte automatiskt.</p>
     <button id="run">Skapa videobatch</button>
     <p id="status">Redo. FFmpeg krävs. Installera faster-whisper och OpenCV för bättre analys.</p>
     <progress id="progress" value="0" max="100" hidden></progress>
