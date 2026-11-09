@@ -1633,6 +1633,47 @@ def performance_viewer_behavior(items):
     return result
 
 
+def recommend_edit_variants(entries):
+    """Recommend a variant only when all three have enough comparable results."""
+    grouped = {}
+    for entry in entries:
+        media_format = entry.get("format", "short")
+        category = entry.get("category", "Annat")
+        cohort = performance_age_cohort(entry.get("measurement_age_hours")) or "Okänd ålder"
+        variant = str(entry.get("variant", "")).strip().lower()
+        if variant not in ("v1", "v2", "v3"):
+            continue
+        grouped.setdefault((media_format, category, cohort), {}).setdefault(variant, []).append(entry)
+
+    recommendations = []
+    for (media_format, category, cohort), variants in grouped.items():
+        if any(len(variants.get(name, [])) < 3 for name in ("v1", "v2", "v3")):
+            continue
+        cohort_items = [item for group in variants.values() for item in group]
+        baseline = sum(float(item.get("performance_score", performance_score(item)) or 0) for item in cohort_items) / len(cohort_items)
+        estimates = {}
+        for name in ("v1", "v2", "v3"):
+            items = variants[name]
+            estimates[name] = learning_group_score(
+                [{"performance_score": float(item.get("performance_score", performance_score(item)) or 0)} for item in items],
+                baseline
+            )
+        ordered = sorted(estimates.items(), key=lambda pair: pair[1]["adjusted_score"], reverse=True)
+        winner, best = ordered[0]
+        runner_up = ordered[1][1]["adjusted_score"]
+        recommendations.append({
+            "format": media_format, "category": category, "age_cohort": cohort,
+            "recommended_variant": winner,
+            "score": best["adjusted_score"],
+            "margin": round(best["adjusted_score"] - runner_up, 2),
+            "confidence": min(value["confidence"] for value in estimates.values()),
+            "samples_per_variant": {name: len(variants[name]) for name in ("v1", "v2", "v3")},
+            "variant_scores": {name: estimates[name]["adjusted_score"] for name in ("v1", "v2", "v3")},
+            "baseline": round(baseline, 2)
+        })
+    return sorted(recommendations, key=lambda item: (item["confidence"], item["margin"], item["score"]), reverse=True)
+
+
 def build_performance_summary(entries):
     groups = {}
     for entry in entries:
@@ -1698,6 +1739,7 @@ def build_performance_summary(entries):
         "learning_recommendations": sorted(learning_recommendations, key=lambda item: item["adjusted_score"], reverse=True),
         "age_cohorts": sorted(age_cohorts, key=lambda item: (item["format"], item["cohort"])),
         "age_comparisons": sorted(age_comparisons, key=lambda item: item["adjusted_score"], reverse=True),
+        "variant_recommendations": recommend_edit_variants(entries),
         "videos_with_age_data": sum(1 for item in entries if performance_age_cohort(item.get("measurement_age_hours"))),
         "minimum_samples_for_recommendation": 3, "prior_strength": 5,
         "note": "Justerad poäng dras mot formatets genomsnitt när urvalet är litet. Åldersjämförelser använder separata publiceringsfönster. Detta är intern statistik, inte en prognos för viralitet."
