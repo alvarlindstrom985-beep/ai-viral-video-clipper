@@ -205,6 +205,7 @@ async function pollBatch(batchId){
         const timing=document.createElement('p');
         timing.textContent=moment.start_seconds+'s – '+moment.end_seconds+'s';
         const score=document.createElement('p');score.className='score';score.textContent='Urvalspoäng: '+moment.score;
+        const selection=document.createElement('p');selection.className='muted';selection.textContent=(moment.selection_reason||'Vald efter grundpoäng')+(moment.selection_diversity_adjustment>0?' · variationsjustering −'+moment.selection_diversity_adjustment:'');
         const rage=document.createElement('p');rage.className='pill';rage.textContent='Rage-signal: '+(moment.rage_score||0)+' poäng';
         const hook=document.createElement('p');hook.className='pill';hook.textContent='Hook första 3 sekunderna: '+(moment.hook_score||0)+' poäng'+((moment.hook_signals||[]).length?' · '+moment.hook_signals.join(', '):'');
         const retention=document.createElement('p');retention.className='score';retention.textContent='Tittarhållningssignaler: '+(moment.retention_score||0)+'/100 · '+(moment.retention_label||'Ej bedömd');
