@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from app.main import normalize_csv_header, parse_csv_metric, candidate_similarity, is_near_duplicate, retention_signal_score, normalize_ai_review, learning_group_score, learned_category_bonus, performance_age_cohort, parse_publish_age_hours, build_performance_summary, performance_viewer_behavior, recommend_edit_variants
+from app.main import normalize_csv_header, parse_csv_metric, candidate_similarity, is_near_duplicate, retention_signal_score, normalize_ai_review, learning_group_score, learned_category_bonus, performance_age_cohort, parse_publish_age_hours, build_performance_summary, performance_viewer_behavior, recommend_edit_variants, select_diverse_candidates
 
 
 class YouTubeCsvMetricTests(unittest.TestCase):
