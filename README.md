@@ -91,3 +91,10 @@ Captions are generated from automatic speech recognition and can contain mistake
 When you upload a source recording and start a batch, the analysis selects the highest-scoring non-overlapping moments for Shorts and longer edits. The dashboard now lists each selected moment with source timestamps, score, reason, categories, and a transcript excerpt when available. The ZIP also includes `highlight-report.json` and `highlight-report.csv` so you can review or edit the timeline separately.
 
 The score is a heuristic based on optional speech transcription, audio activity, and weak visual cues; it is not a guarantee that a moment will perform well. Review every export before publishing. This workflow processes the uploaded source file only; it does not capture or download third-party live streams or VODs.
+
+
+## Reaction & Rage Detector
+
+The highlight ranker gives additional weight to explicit rage/frustration phrases in the transcript, alongside laughter, spontaneous reaction phrases, speech density, audio activity, and weak visual cues. The highlight report includes a separate rage score and matched phrases for review.
+
+This is a heuristic signal, not reliable emotion recognition: transcription can be wrong, phrases can be sarcastic or playful, and loud audio alone is not treated as anger. Review clips before publishing and use source recordings you own or have permission to use.
