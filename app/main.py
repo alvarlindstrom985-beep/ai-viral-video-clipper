@@ -374,25 +374,106 @@ def run_command(command):
 
 
 def inspect_render_quality(path: Path, expected_duration: float, expected_width: int, expected_height: int):
+    """Run technical stream checks plus conservative black/freeze/audio diagnostics."""
     if not path.is_file() or path.stat().st_size < 10000:
-        return {"passed": False, "reason": "Filen saknas eller är för liten", "warnings": []}
-    probe = run_command(["ffprobe", "-v", "error", "-show_entries", "format=duration:stream=codec_type,width,height", "-of", "json", str(path)])
+        return {"passed": False, "reason": "Filen saknas eller är för liten", "warnings": [], "diagnostics": {}}
+    probe = run_command([
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration:stream=codec_type,width,height",
+        "-of", "json", str(path)
+    ])
     if probe.returncode != 0:
-        return {"passed": False, "reason": "FFprobe kunde inte läsa filen", "warnings": []}
+        return {"passed": False, "reason": "FFprobe kunde inte läsa filen", "warnings": [], "diagnostics": {}}
     try:
         data = json.loads(probe.stdout or "{}")
         duration = float(data.get("format", {}).get("duration", 0))
     except (ValueError, TypeError, json.JSONDecodeError):
-        return {"passed": False, "reason": "Ogiltig videometadata", "warnings": []}
+        return {"passed": False, "reason": "Ogiltig videometadata", "warnings": [], "diagnostics": {}}
+
     streams = data.get("streams", [])
-    video = next((x for x in streams if x.get("codec_type") == "video"), None)
-    audio = next((x for x in streams if x.get("codec_type") == "audio"), None)
-    valid_video = video is not None and int(video.get("width", 0)) == expected_width and int(video.get("height", 0)) == expected_height
+    video = next((item for item in streams if item.get("codec_type") == "video"), None)
+    audio = next((item for item in streams if item.get("codec_type") == "audio"), None)
+    valid_video = (
+        video is not None
+        and int(video.get("width", 0)) == expected_width
+        and int(video.get("height", 0)) == expected_height
+    )
     valid_duration = expected_duration * 0.90 <= duration <= expected_duration + 1.5
-    warnings = [] if audio else ["Inget ljudspår hittades"]
-    return {"passed": bool(valid_video and valid_duration), "reason": "OK" if valid_video and valid_duration else "Fel upplösning, saknat videospår eller fel längd", "warnings": warnings, "duration": round(duration, 2)}
+    warnings = []
+    diagnostics = {
+        "duration": round(duration, 2),
+        "width": int(video.get("width", 0)) if video else None,
+        "height": int(video.get("height", 0)) if video else None,
+        "audio_present": audio is not None,
+        "black_seconds": None,
+        "freeze_seconds": None,
+        "audio_peak_db": None
+    }
+    if not audio:
+        warnings.append("Inget ljudspår hittades")
 
+    # These filters are advisory: dark gameplay, loading screens and intentional
+    # pauses can be legitimate. They never reject a clip on their own.
+    try:
+        video_scan = subprocess.run(
+            [
+                "ffmpeg", "-hide_banner", "-nostats", "-i", str(path),
+                "-vf", "blackdetect=d=1.0:pix_th=0.10,freezedetect=n=-50dB:d=2.0",
+                "-an", "-f", "null", "-"
+            ],
+            capture_output=True, text=True, timeout=45
+        )
+        if video_scan.returncode == 0:
+            log = (video_scan.stderr or "")[-30000:]
+            black_total = sum(
+                max(0.0, float(match.group(2)) - float(match.group(1)))
+                for match in re.finditer(r"black_start:([0-9.]+)\\s+black_end:([0-9.]+)", log)
+            )
+            freeze_total = sum(
+                max(0.0, float(match.group(2)) - float(match.group(1)))
+                for match in re.finditer(r"freeze_start:([0-9.]+)\\s+freeze_end:([0-9.]+)", log)
+            )
+            diagnostics["black_seconds"] = round(black_total, 2)
+            diagnostics["freeze_seconds"] = round(freeze_total, 2)
+            if black_total >= max(1.5, duration * 0.12):
+                warnings.append(f"Misstänkt långa/många svarta bildpartier ({black_total:.1f} s)")
+            if freeze_total >= max(2.0, duration * 0.15):
+                warnings.append(f"Misstänkt frusen bild ({freeze_total:.1f} s)")
+        else:
+            warnings.append("Bilddiagnostik kunde inte slutföras")
+    except (OSError, subprocess.TimeoutExpired):
+        warnings.append("Bilddiagnostik kunde inte slutföras")
 
+    if audio:
+        try:
+            audio_scan = subprocess.run(
+                [
+                    "ffmpeg", "-hide_banner", "-nostats", "-i", str(path),
+                    "-af", "volumedetect", "-vn", "-f", "null", "-"
+                ],
+                capture_output=True, text=True, timeout=45
+            )
+            if audio_scan.returncode == 0:
+                peak = re.search(r"max_volume:\\s*(-?[0-9.]+)\\s*dB", audio_scan.stderr or "")
+                if peak:
+                    peak_db = float(peak.group(1))
+                    diagnostics["audio_peak_db"] = round(peak_db, 2)
+                    if peak_db >= -0.5:
+                        warnings.append(f"Ljudtoppen ligger nära/över klippningsgränsen ({peak_db:.1f} dB)")
+            else:
+                warnings.append("Ljudnivå kunde inte analyseras")
+        except (OSError, subprocess.TimeoutExpired):
+            warnings.append("Ljudnivå kunde inte analyseras")
+
+    passed = bool(valid_video and valid_duration and audio is not None)
+    reason = "OK" if passed else "Fel upplösning, saknat ljud-/videospår eller fel längd"
+    return {
+        "passed": passed,
+        "reason": reason,
+        "warnings": warnings,
+        "duration": round(duration, 2),
+        "diagnostics": diagnostics
+    }
 
 def normalize_ai_review(payload):
     """Validate and clamp structured reviewer output before it reaches the UI."""
@@ -1659,7 +1740,10 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                         "reason": candidate["reason"], "categories": candidate["categories"],
                         "subtitles_burned": bool(subtitle_path and burn_subtitles),
                         "hook_overlay": bool(hook_ass_path),
-                        "hook_style": hook_list[hook_index].get("style") if hook_ass_path else None
+                        "hook_style": hook_list[hook_index].get("style") if hook_ass_path else None,
+                        "quality_passed": quality["passed"],
+                        "quality_warnings": quality.get("warnings", []),
+                        "quality_diagnostics": quality.get("diagnostics", {})
                     })
                     state["results"] = results
                     save_batch_job(batch_id, state)
