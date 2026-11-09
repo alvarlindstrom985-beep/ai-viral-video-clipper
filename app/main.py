@@ -210,7 +210,7 @@ def write_hook_overlay_ass(batch_id: str, media_type: str, clip_number: int, var
         secs, cs = divmod(rem, 100)
         return f"{hours}:{minutes:02}:{secs:02}.{cs:02}"
     # Fade + subtle scale-up gives the hook a clear entrance without covering the full clip.
-    animated_text = r"{\\fad(180,220)\\fscx94\\fscy94\\t(0,420,\\fscx100\\fscy100)}" + text
+    animated_text = r"{\fad(180,220)\fscx94\fscy94\t(0,420,\fscx100\fscy100)}" + text
     ass.append(f"Dialogue: 1,0:00:00.00,{ass_time(end_time)},Hook,,0,0,0,,{animated_text}")
     path = OUTPUTS / f"{batch_id}_{media_type}_{clip_number:02d}_{variant_id}_hook.ass"
     path.write_text("\\n".join(ass) + "\\n", encoding="utf-8")
