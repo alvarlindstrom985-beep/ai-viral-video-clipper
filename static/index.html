@@ -65,6 +65,7 @@
       <label class="field">Format<select name="format"><option value="short">Short</option><option value="long">Längre video</option></select></label>
       <label class="field">Redigeringsvariant<select name="variant"><option value="v1">V1 – Clean</option><option value="v2">V2 – Flash</option><option value="v3">V3 – Color</option></select></label>
       <label class="field">Visningar<input name="views" type="number" min="0" step="1" required value="0"></label>
+      <label class="field">Ålder vid mätning (timmar)<input name="measurement_age_hours" type="number" min="0" max="87600" step="1" placeholder="Exempel: 48 – valfritt"></label>
       <label class="field">Engagerade visningar<input name="engaged_views" type="number" min="0" step="1" placeholder="Valfritt"></label>
       <label class="field">Stayed to watch (%) – Shorts<input name="stayed_to_watch_pct" type="number" min="0" max="100" step="0.1" placeholder="Exempel: 72.5"></label>
       <label class="field">Genomsnittlig visningstid (sek)<input name="average_view_duration_sec" type="number" min="0" step="0.1" placeholder="Exempel: 18.4"></label>
@@ -332,6 +333,28 @@ function renderPerformance(data){
     const learning=document.createElement('p');learning.className='muted';
     learning.textContent='Självlärningen väntar på minst 3 videor i samma kategori eller variant. Lägg in YouTube-statistik för att börja kalibrera rankningen.';
     performanceInsights.append(learning);
+  }
+  if((insights.age_cohorts||[]).length){
+    const ageCard=document.createElement('article');ageCard.className='clip';
+    const ageHeading=document.createElement('h3');ageHeading.textContent='Jämförelser vid samma publiceringsålder';
+    const ageNote=document.createElement('p');ageNote.className='muted';
+    ageNote.textContent=(insights.videos_with_age_data||0)+' av '+(insights.total_videos||0)+' videor har åldersdata. Kategorier och varianter jämförs separat inom samma tidsfönster.';
+    ageCard.append(ageHeading,ageNote);
+    (insights.age_cohorts||[]).forEach(item=>{
+      const line=document.createElement('p');line.className='muted';
+      line.textContent=(item.format==='short'?'Shorts':'Längre video')+' · '+item.cohort+' · '+item.samples+' videor · '+item.average_score+'/100 · '+Math.round(item.average_views).toLocaleString('sv-SE')+' visningar';
+      ageCard.append(line);
+    });
+    (insights.age_comparisons||[]).slice(0,6).forEach(item=>{
+      const line=document.createElement('p');line.className='score';
+      line.textContent=(item.dimension==='category'?'Kategori: ':'Variant: ')+item.label+' · '+item.age_cohort+' · '+item.adjusted_score+'/100 · '+item.samples+' videor';
+      ageCard.append(line);
+    });
+    performanceInsights.append(ageCard);
+  }else{
+    const ageNote=document.createElement('p');ageNote.className='muted';
+    ageNote.textContent='Åldersjämförelser visas när du registrerar ålder vid mätning eller importerar en publiceringsdatumkolumn från YouTube Studio.';
+    performanceInsights.append(ageNote);
   }
   if(!insights.best_category&&!insights.best_variant){
     const note=document.createElement('p');note.className='muted';
