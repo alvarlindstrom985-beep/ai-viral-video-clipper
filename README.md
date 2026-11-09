@@ -138,6 +138,10 @@ The comparison score is an internal heuristic, not a viral prediction. Record th
 Future candidate scores compare category results inside publication-age cohorts as well as within the same format. A category needs at least three examples in an age window; small samples are shrunk toward that cohort's baseline. Cohort-specific adjustments are combined by sample count and capped at ±3 ranking points. The report/dashboard shows the applied adjustment. This is lightweight calibration, not model training; it should not be treated as a causal conclusion from small or mismatched samples.
 
 
+## Performance-based editing coach
+
+The performance dashboard compares V1/V2/V3 on individual YouTube metrics within the same category, format, and publication-age cohort. It can surface evidence-led review prompts for Shorts hooks (stayed-to-watch), retention/pacing (average percentage viewed), average watch time, long-form packaging (click-through rate), and shareability (shares per 1,000 views). Each metric needs at least three valid measurements for every variant, and only meaningful gaps are shown. These are observational patterns, not proof that an edit caused the result; click-through rate mostly reflects packaging rather than the clip edit. The coach does not automatically alter or publish videos.
+
 ## Optional AI clip reviewer (vision + transcript)
 
 A second-pass reviewer can inspect up to three sampled still frames (opening, middle, ending) plus the available speech transcript for each selected highlight. It returns separate editorial scores for the hook, clarity, visual interest, framing/cropping, composition, overlay clutter, payoff, and story coherence, along with strengths, weaknesses, up to five concrete visual warnings, and one suggested edit. Framing checks look for visibly cut-off or poorly placed subjects; composition checks look for a clear subject and useful image space; overlay-clutter checks assess whether visible text/HUD elements compete with important content. These are visual estimates from three still frames, not full-motion analysis, OCR guarantees, or a prediction of views or actual audience retention.
