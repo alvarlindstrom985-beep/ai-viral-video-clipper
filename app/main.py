@@ -285,7 +285,7 @@ def find_reaction_anchors(duration: float, levels, transcript, visual_samples=No
     return merged
 
 
-def score_windows(duration: float, clip_len: float, levels, transcript, clip_count: int, visual_samples=None):
+def score_windows(duration: float, clip_len: float, levels, transcript, clip_count: int, visual_samples=None, allow_overlap=True):
     latest_start = max(0.0, duration - clip_len)
     step = max(3.0, min(8.0, clip_len / 5))
     starts = []
@@ -381,7 +381,7 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
             selected.append(candidate)
         if len(selected) >= clip_count:
             break
-    if len(selected) < clip_count:
+    if allow_overlap and len(selected) < clip_count:
         for candidate in sorted(scored, key=lambda item: item["start"]):
             if candidate not in selected:
                 selected.append(candidate)
@@ -501,6 +501,121 @@ def process_video(job_id: str, clip_count: int = 3, clip_length: int = 30):
     }
 
 
+@app.post("/api/batch/{job_id}")
+def create_daily_batch(
+    job_id: str,
+    short_count: int = 25,
+    long_count: int = 5,
+    variants: int = 3,
+    short_length: int = 30,
+    long_length: int = 300
+):
+    """Create a review-only batch: Shorts and long videos, each with three edit variants."""
+    if not re.fullmatch(r"[a-f0-9]{12}", job_id):
+        raise HTTPException(400, "Invalid job ID")
+    if not 1 <= short_count <= 25 or not 0 <= long_count <= 5:
+        raise HTTPException(400, "Batch size is limited to 25 Shorts and 5 long videos")
+    if variants != 3:
+        raise HTTPException(400, "Exactly 3 variants are supported")
+    if not 15 <= short_length <= 60:
+        raise HTTPException(400, "Short length must be between 15 and 60 seconds")
+    if not 180 <= long_length <= 600:
+        raise HTTPException(400, "Long video length must be between 180 and 600 seconds")
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        raise HTTPException(500, "Install FFmpeg and make sure ffmpeg/ffprobe are on PATH")
+
+    matches = list(UPLOADS.glob(f"{job_id}.*"))
+    if not matches:
+        raise HTTPException(404, "Video not found")
+    source = matches[0]
+    duration = get_duration(source)
+    if duration < 5:
+        raise HTTPException(400, "Video is too short to create clips")
+
+    levels = audio_levels(source)
+    transcript = transcribe_audio(source)
+    visual_samples = analyze_visual_reactions(source)
+    short_duration = min(float(short_length), duration)
+    short_candidates = score_windows(
+        duration, short_duration, levels, transcript, short_count,
+        visual_samples, allow_overlap=False
+    )
+    long_candidates = []
+    if long_count and duration >= 180:
+        actual_long_length = min(float(long_length), duration)
+        long_candidates = score_windows(
+            duration, actual_long_length, levels, transcript, long_count,
+            visual_samples, allow_overlap=False
+        )
+
+    recipes = [
+        {"id": "v1", "label": "Clean intro · original audio",
+         "video_filter": "fade=t=in:st=0:d=0.55", "audio_filter": None},
+        {"id": "v2", "label": "Flash intro · normalized audio",
+         "video_filter": "eq=brightness=0.07:contrast=1.12:enable='between(t,0,1.1)',fade=t=in:st=0:d=0.25",
+         "audio_filter": "loudnorm=I=-16:TP=-1.5:LRA=11"},
+        {"id": "v3", "label": "Color intro · compressed audio",
+         "video_filter": "hue=h=8:s=1.18:enable='between(t,0,1.4)',fade=t=in:st=0:d=0.4",
+         "audio_filter": "acompressor=threshold=0.089:ratio=2:attack=20:release=250,volume=1.15"}
+    ]
+
+    results = []
+    failures = []
+    groups = [
+        ("short", short_candidates, short_duration),
+        ("long", long_candidates, min(float(long_length), duration))
+    ]
+    for media_type, candidates, clip_duration in groups:
+        for clip_index, candidate in enumerate(candidates, 1):
+            for recipe in recipes:
+                filename = f"{job_id}_{media_type}_{clip_index:02d}_{recipe['id']}.mp4"
+                out = OUTPUTS / filename
+                if media_type == "short":
+                    framing = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
+                else:
+                    framing = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
+                command = [
+                    "ffmpeg", "-y", "-ss", str(candidate["start"]), "-i", str(source),
+                    "-t", str(clip_duration), "-vf", framing + "," + recipe["video_filter"],
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "23"
+                ]
+                if recipe["audio_filter"]:
+                    command += ["-af", recipe["audio_filter"]]
+                command += ["-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(out)]
+                rendered = run_command(command)
+                if rendered.returncode != 0 or not out.exists():
+                    failures.append(filename)
+                    continue
+                results.append({
+                    "name": filename, "url": f"/api/clips/{filename}",
+                    "type": media_type, "clip_number": clip_index,
+                    "variant": recipe["id"], "variant_label": recipe["label"],
+                    "start": round(candidate["start"], 1),
+                    "end": round(candidate["start"] + clip_duration, 1),
+                    "duration": round(clip_duration, 1),
+                    "score": round(candidate["score"], 2),
+                    "reason": candidate["reason"], "categories": candidate["categories"]
+                })
+
+    if not results:
+        raise HTTPException(500, "No videos could be rendered. Check FFmpeg and the source file.")
+    return {
+        "job_id": job_id, "videos": results,
+        "requested": {"shorts": short_count, "long_videos": long_count, "variants_per_video": variants},
+        "created": {
+            "shorts": sum(1 for item in results if item["type"] == "short") // variants,
+            "long_videos": sum(1 for item in results if item["type"] == "long") // variants,
+            "files": len(results)
+        },
+        "failed_files": failures,
+        "analysis": "Whisper transcript + audio activity" if transcript is not None else "Audio activity fallback",
+        "visual_analysis_available": visual_samples is not None,
+        "transcript_available": transcript is not None,
+        "publishing": "manual_only",
+        "note": "All exports are saved as drafts. Nothing is uploaded or published automatically. Variants use different intro effects and audio mastering, not different music tracks."
+    }
+
+
 @app.get("/api/subtitles/{filename}")
 def get_subtitles(filename: str):
     if not re.fullmatch(r"[a-f0-9]{12}_clip_[1-8]\.srt", filename):
@@ -513,7 +628,7 @@ def get_subtitles(filename: str):
 
 @app.get("/api/clips/{filename}")
 def get_clip(filename: str):
-    if not re.fullmatch(r"[a-f0-9]{12}_clip_[1-8]\.mp4", filename):
+    if not re.fullmatch(r"[a-f0-9]{12}_(?:clip_[1-8]|(?:short_\d{2}_v[1-3]|long_\d{2}_v[1-3]))\.mp4", filename):
         raise HTTPException(400, "Invalid clip name")
     path = OUTPUTS / filename
     if not path.is_file():
