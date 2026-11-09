@@ -71,7 +71,7 @@ The browser refreshes live status every 60 seconds while the dashboard is open a
 
 ## Word-by-word karaoke captions
 
-The batch generator can request word-level timestamps from Faster-Whisper and render an ASS karaoke subtitle track. The active word is highlighted as the streamer speaks. Select **Word by word – karaoke highlight** in the dashboard, or choose sentence captions for conventional subtitles. A standard SRT sidecar is also included for editing and accessibility.
+The batch generator can request word-level timestamps from Faster-Whisper and render an ASS karaoke subtitle track. The active word is highlighted as the streamer speaks. Select **Word by word – karaoke highlight** in the dashboard, or choose sentence captions for conventional subtitles. A standard SRT sidecar is also included for editing and accessibility. The dashboard sends the selected caption mode to the batch API; word-level mode is the default.
 
 Word timing is estimated by speech recognition and may drift or mis-transcribe fast speech, overlapping voices, slang, or game audio. Review the result before publishing. If word timestamps are unavailable, the generator falls back to sentence captions.
 
