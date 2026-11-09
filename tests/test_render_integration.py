@@ -42,6 +42,7 @@ class BatchRenderIntegrationTests(unittest.TestCase):
             root = Path(temp_dir)
             uploads = root / "uploads"
             outputs = root / "outputs"
+            database = root / "batch_jobs.sqlite3"
             uploads.mkdir()
             outputs.mkdir()
             source = uploads / f"{job_id}.mp4"
@@ -58,6 +59,7 @@ class BatchRenderIntegrationTests(unittest.TestCase):
             with (
                 patch.object(main, "UPLOADS", uploads),
                 patch.object(main, "OUTPUTS", outputs),
+                patch.object(main, "BATCH_DB_FILE", database),
                 patch.object(main, "BATCH_JOBS", {batch_id: state}),
                 patch.object(main, "audio_levels", return_value=[]),
                 patch.object(main, "transcribe_audio", return_value=transcript),
