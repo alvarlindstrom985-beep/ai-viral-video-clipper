@@ -117,6 +117,52 @@ def write_batch_subtitles(batch_id: str, media_type: str, clip_number: int,
     return subtitle_path
 
 
+
+def write_word_karaoke_ass(batch_id: str, media_type: str, clip_number: int,
+                           start: float, end: float, transcript):
+    """Write ASS karaoke captions using Whisper word-level timestamps."""
+    events = []
+    for segment in transcript or []:
+        words = [word for word in segment.get("words", [])
+                 if word["end"] > start and word["start"] < end]
+        if not words:
+            continue
+        karaoke = []
+        for word in words:
+            local_start = max(0.0, word["start"] - start)
+            local_end = min(end - start, word["end"] - start)
+            duration_cs = max(1, int(round((local_end - local_start) * 100)))
+            token = word["text"].replace("{", "(").replace("}", ")").replace("\\", "")
+            karaoke.append(f"{{\\k{duration_cs}}}{token}")
+        if karaoke:
+            first = max(0.0, words[0]["start"] - start)
+            last = max(first + 0.01, min(end - start, words[-1]["end"] - start))
+            events.append((first, last, " ".join(karaoke)))
+    if not events:
+        return None
+
+    font_size = 58 if media_type == "short" else 42
+    ass = [
+        "[Script Info]", "ScriptType: v4.00+", "PlayResX: 1080", "PlayResY: 1920",
+        "WrapStyle: 2", "ScaledBorderAndShadow: yes", "",
+        "[V4+ Styles]",
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+        f"Style: Default,Arial,{font_size},&H00FFFFFF,&H0000D7FF,&H00000000,&H80000000,1,0,1,4,1,2,70,70,150,1",
+        "", "[Events]",
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
+    ]
+    def ass_time(seconds):
+        total_cs = max(0, int(round(seconds * 100)))
+        hours, rem = divmod(total_cs, 360000)
+        minutes, rem = divmod(rem, 6000)
+        secs, cs = divmod(rem, 100)
+        return f"{hours}:{minutes:02}:{secs:02}.{cs:02}"
+    for event_start, event_end, text in events:
+        ass.append(f"Dialogue: 0,{ass_time(event_start)},{ass_time(event_end)},Default,,0,0,0,,{text}")
+    path = OUTPUTS / f"{batch_id}_{media_type}_{clip_number:02d}_karaoke.ass"
+    path.write_text("\\n".join(ass) + "\\n", encoding="utf-8")
+    return path
+
 def ffmpeg_subtitle_filter(subtitle_path: Path, style: str, media_type: str):
     """Build a safely escaped FFmpeg subtitles filter using a fixed style allowlist."""
     styles = {
@@ -256,15 +302,27 @@ def transcribe_audio(source: Path):
     model_size = "small"
     try:
         model = WhisperModel(model_size, device="cpu", compute_type="int8")
-        segments, _ = model.transcribe(str(source), vad_filter=True, word_timestamps=False)
+        segments, _ = model.transcribe(str(source), vad_filter=True, word_timestamps=True)
         transcript = []
         for segment in segments:
             text = segment.text.strip()
             if text:
+                words = []
+                for word in (segment.words or []):
+                    if word.start is None or word.end is None:
+                        continue
+                    token = word.word.strip()
+                    if token:
+                        words.append({
+                            "start": float(word.start),
+                            "end": float(word.end),
+                            "text": token
+                        })
                 transcript.append({
                     "start": float(segment.start),
                     "end": float(segment.end),
-                    "text": text
+                    "text": text,
+                    "words": words
                 })
         return transcript
     except Exception:
@@ -616,7 +674,7 @@ def process_video(job_id: str, clip_count: int = 3, clip_length: int = 30):
     }
 
 
-def render_batch_job(batch_id, job_id, short_count, long_count, short_length, long_length, burn_subtitles=True, subtitle_style='classic'):
+def render_batch_job(batch_id, job_id, short_count, long_count, short_length, long_length, burn_subtitles=True, subtitle_style='classic', caption_mode='word_by_word'):
     """Background worker. Progress is updated after each real export attempt."""
     state = BATCH_JOBS[batch_id]
     state["status"] = "running"
@@ -697,10 +755,18 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                         framing = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
                     else:
                         framing = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
-                    subtitle_path = write_batch_subtitles(
-                        batch_id, media_type, clip_index, candidate["start"],
-                        candidate["start"] + clip_duration, transcript
-                    )
+                    subtitle_path = None
+                    if transcript:
+                        if caption_mode == "word_by_word":
+                            subtitle_path = write_word_karaoke_ass(
+                                batch_id, media_type, clip_index, candidate["start"],
+                                candidate["start"] + clip_duration, transcript
+                            )
+                        if subtitle_path is None:
+                            subtitle_path = write_batch_subtitles(
+                                batch_id, media_type, clip_index, candidate["start"],
+                                candidate["start"] + clip_duration, transcript
+                            )
                     video_filter = framing + "," + recipe["video_filter"]
                     if subtitle_path and burn_subtitles:
                         video_filter += "," + ffmpeg_subtitle_filter(subtitle_path, subtitle_style, media_type)
@@ -759,8 +825,9 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                 path = OUTPUTS / item["name"]
                 if path.is_file():
                     archive.write(path, arcname=item["name"])
-            for subtitle_file in OUTPUTS.glob(f"{batch_id}_*.srt"):
-                archive.write(subtitle_file, arcname=f"subtitles/{subtitle_file.name}")
+            for pattern in (f"{batch_id}_*.srt", f"{batch_id}_*.ass"):
+                for subtitle_file in OUTPUTS.glob(pattern):
+                    archive.write(subtitle_file, arcname=f"subtitles/{subtitle_file.name}")
             archive.write(report_json, arcname="highlight-report.json")
             archive.write(report_csv, arcname="highlight-report.csv")
         state.update({
@@ -779,6 +846,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
             "publishing": "manual_only",
             "subtitles_burned": bool(burn_subtitles and transcript is not None),
             "subtitle_style": subtitle_style,
+            "caption_mode": caption_mode,
             "note": "All exports are saved as drafts. Nothing is uploaded or published automatically. Variants use different intro effects and audio mastering, not different music tracks."
         })
     except Exception as exc:
@@ -795,7 +863,8 @@ def create_daily_batch(
     short_length: int = 30,
     long_length: int = 300,
     burn_subtitles: bool = True,
-    subtitle_style: str = "classic"
+    subtitle_style: str = "classic",
+    caption_mode: str = "word_by_word"
 ):
     """Queue a review-only batch and return immediately."""
     if not re.fullmatch(r"[a-f0-9]{12}", job_id):
@@ -810,6 +879,8 @@ def create_daily_batch(
         raise HTTPException(400, "Long video length must be between 180 and 600 seconds")
     if subtitle_style not in {"classic", "yellow", "boxed"}:
         raise HTTPException(400, "Invalid subtitle style")
+    if caption_mode not in {"word_by_word", "sentence"}:
+        raise HTTPException(400, "Invalid caption mode")
     if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
         raise HTTPException(500, "Install FFmpeg and make sure ffmpeg/ffprobe are on PATH")
     if not list(UPLOADS.glob(f"{job_id}.*")):
@@ -820,11 +891,11 @@ def create_daily_batch(
         "batch_id": batch_id, "job_id": job_id, "status": "queued",
         "stage": "Väntar på start", "completed": 0, "total": 0,
         "results": [], "created": None,
-        "burn_subtitles": burn_subtitles, "subtitle_style": subtitle_style
+        "burn_subtitles": burn_subtitles, "subtitle_style": subtitle_style, "caption_mode": caption_mode
     }
     background_tasks.add_task(
         render_batch_job, batch_id, job_id, short_count, long_count, short_length, long_length,
-        burn_subtitles, subtitle_style
+        burn_subtitles, subtitle_style, caption_mode
     )
     return {"batch_id": batch_id, "status": "queued", "status_url": f"/api/batch/status/{batch_id}"}
 
