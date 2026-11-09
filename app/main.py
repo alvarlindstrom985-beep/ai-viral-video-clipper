@@ -1382,7 +1382,7 @@ def generate_metadata(payload: dict):
     """Create editable metadata drafts from user-provided clip context; no external AI call."""
     category = str(payload.get("category", "Annat"))
     media_format = str(payload.get("format", "short"))
-    context = re.sub(r"\\s+", " ", str(payload.get("context", "")).strip())[:240]
+    context = re.sub(r"\s+", " ", str(payload.get("context", "")).strip())[:240]
     if category not in PERFORMANCE_CATEGORIES or media_format not in PERFORMANCE_FORMATS:
         raise HTTPException(400, "Ogiltig kategori eller format.")
     if not context:
