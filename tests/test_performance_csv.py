@@ -192,7 +192,7 @@ class DiverseBatchSelectionTests(unittest.TestCase):
         ], 2, allow_overlap=False)
         self.assertEqual({tuple(item["categories"]) for item in selected},
                          {("Rage/ilska-signal",), ("GTA-händelse",)})
-        self.assertTrue(any(item["selection_diversity_adjustment"] > 0 for item in selected))
+        self.assertEqual([item["score"] for item in selected], [95, 90])
 
     def test_fills_remaining_slots_when_only_one_category_exists(self):
         selected = select_diverse_candidates([
