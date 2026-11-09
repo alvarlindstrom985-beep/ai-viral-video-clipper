@@ -66,7 +66,8 @@ button.addEventListener('click',async()=>{
         subtitleLink.href=clip.subtitle_url;subtitleLink.download=clip.subtitle_name;
         subtitleLink.textContent='Ladda ner undertexter (.srt)';links.append(subtitleLink);
       }
-      card.append(video,label,score,reason);\n      if(clip.categories && clip.categories.length){const category=document.createElement('p');category.className='muted';category.textContent='Typ: '+clip.categories.join(', ');card.append(category)}
+      card.append(video,label,score,reason);
+      if(clip.categories && clip.categories.length){const category=document.createElement('p');category.className='muted';category.textContent='Typ: '+clip.categories.join(', ');card.append(category)}
       if(clip.matched_phrases && clip.matched_phrases.length){
         const tags=document.createElement('div');
         clip.matched_phrases.slice(0,5).forEach(phrase=>{const tag=document.createElement('span');tag.className='tag';tag.textContent=phrase;tags.append(tag)});
