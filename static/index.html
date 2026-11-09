@@ -44,6 +44,9 @@
       <label class="field">Undertextstil
         <select id="subtitleStyle"><option value="classic" selected>Vit text med svart kontur</option><option value="yellow">Gul highlight-stil</option><option value="boxed">Vit text med mörk bakgrund</option></select>
       </label>
+      <label class="field">Undertextanimation
+        <select id="captionMode"><option value="word_by_word" selected>Ord för ord – karaoke-markering</option><option value="sentence">Vanliga meningar</option></select>
+      </label>
     </div>
     <p class="notice">Varje grundvideo får 3 versioner med olika introeffekt och ljudmix. Upp till 90 filer. En batch startas när du klickar – den schemaläggs inte automatiskt.</p>
     <button id="run">Skapa videobatch</button>
@@ -187,7 +190,8 @@ button.addEventListener('click',async()=>{
       short_length:document.querySelector('#shortLength').value,
       long_length:document.querySelector('#longLength').value,
       burn_subtitles:document.querySelector('#burnSubtitles').value,
-      subtitle_style:document.querySelector('#subtitleStyle').value
+      subtitle_style:document.querySelector('#subtitleStyle').value,
+      caption_mode:document.querySelector('#captionMode').value
     });
     const response=await fetch('/api/batch/'+job.job_id+'?'+params.toString(),{method:'POST'});
     const queued=await response.json();if(!response.ok)throw new Error(queued.detail||'Kunde inte starta batchen');
