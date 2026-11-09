@@ -448,7 +448,7 @@ def review_clip_with_ai(source: Path, start: float, end: float, transcript):
 
 
 def generate_hook_options(transcript, start: float, end: float):
-    """Create three transcript-grounded opening text hooks; suggestions are never burned into video."""
+    """Create up to three transcript-grounded opening hooks for the rendered edit variants."""
     segments = [item for item in (transcript or []) if isinstance(item, dict)
                 and isinstance(item.get("start"), (int, float))
                 and isinstance(item.get("end"), (int, float))
@@ -493,7 +493,7 @@ def generate_hook_options(transcript, start: float, end: float):
             unique.append(item)
             seen.add(key)
     return {"status": "generated" if unique else "no_transcript", "options": unique[:3],
-            "note": "Textförslag baserade på transkriptet – välj och lägg in manuellt i din videoredigerare."}
+            "note": "Textförslag baserade på transkriptet – används i varsin videovariant när en säker hook-overlay kan skapas."}
 
 def suggest_edit_points(start: float, end: float, transcript, media_format: str = "short"):
     """Suggest conservative manual trims from transcript timing; never changes the rendered clip."""
