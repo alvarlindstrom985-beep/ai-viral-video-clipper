@@ -934,6 +934,48 @@ def is_near_duplicate(candidate, existing):
     )
 
 
+def select_diverse_candidates(candidates, clip_count: int, allow_overlap=True, category_repeat_penalty: float = 6.0):
+    """Greedily select strong, distinct moments with a small soft penalty for repeated categories."""
+    remaining = list(candidates)
+    selected = []
+    while remaining and len(selected) < max(0, clip_count):
+        best = None
+        best_adjusted = float("-inf")
+        best_penalty = 0.0
+        for candidate in remaining:
+            if any(is_near_duplicate(candidate, item) for item in selected):
+                continue
+            if not allow_overlap and any(
+                candidate["end"] > item["start"] and candidate["start"] < item["end"]
+                for item in selected
+            ):
+                continue
+            candidate_categories = set(candidate.get("categories") or [])
+            repeated_categories = set()
+            for item in selected:
+                repeated_categories.update(candidate_categories.intersection(item.get("categories") or []))
+            penalty = min(category_repeat_penalty * len(repeated_categories), category_repeat_penalty * 1.5)
+            adjusted = float(candidate.get("score", 0)) - penalty
+            if (best is None or adjusted > best_adjusted
+                    or (adjusted == best_adjusted and float(candidate.get("score", 0)) > float(best.get("score", 0)))):
+                best = candidate
+                best_adjusted = adjusted
+                best_penalty = penalty
+        if best is None:
+            break
+        chosen = dict(best)
+        chosen["selection_diversity_adjustment"] = round(best_penalty, 2)
+        chosen["selection_reason"] = (
+            "Vald för stark grundpoäng" if best_penalty == 0
+            else "Vald för bättre variation i batchen"
+        )
+        selected.append(chosen)
+        remaining.remove(best)
+    for item in selected:
+        item.pop("_similarity_text", None)
+    return sorted(selected, key=lambda item: item["score"], reverse=True)
+
+
 def score_windows(duration: float, clip_len: float, levels, transcript, clip_count: int, visual_samples=None, allow_overlap=True, media_format='short'):
     latest_start = max(0.0, duration - clip_len)
     step = max(3.0, min(8.0, clip_len / 5))
@@ -1099,24 +1141,7 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
         })
 
     scored.sort(key=lambda item: item["score"], reverse=True)
-    selected = []
-    for candidate in scored:
-        # Do not fill the batch with near-identical moments just to reach the requested count.
-        if any(is_near_duplicate(candidate, item) for item in selected):
-            continue
-        if not allow_overlap and any(
-            candidate["end"] > item["start"] and candidate["start"] < item["end"]
-            for item in selected
-        ):
-            continue
-        selected.append(candidate)
-        if len(selected) >= clip_count:
-            break
-
-    # Internal transcript text is only used for duplicate detection, never returned to the UI.
-    for item in selected:
-        item.pop("_similarity_text", None)
-    return sorted(selected, key=lambda item: item["score"], reverse=True)
+    return select_diverse_candidates(scored, clip_count, allow_overlap=allow_overlap)
 
 
 @app.get("/")
