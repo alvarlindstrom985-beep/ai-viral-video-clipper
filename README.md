@@ -29,7 +29,7 @@ Every rendered export is checked with FFprobe for a readable video stream, expec
 
 ## Subtitle layout diagnostics
 
-ASS-based karaoke captions and animated hook overlays receive an additional layout check. It compares the subtitle canvas with the output dimensions and checks style font size, horizontal margins, vertical margins, and approximate single-line text width. Findings appear as advisory warnings on the draft; they do not reject exports. This is a metadata/heuristic check, not OCR: it cannot guarantee that captions avoid important gameplay elements or that every font renders exactly as estimated. Review the video itself before publishing.
+ASS-based karaoke captions and animated hook overlays receive an additional layout check. It compares the subtitle canvas with the output dimensions and checks style font size, horizontal margins, vertical margins, and approximate single-line text width. Findings appear as advisory warnings on the draft; they do not reject exports. This is a metadata/heuristic check, not OCR: it cannot identify the actual GTA minimap, mission text, or moving gameplay subjects. It additionally estimates whether top- or bottom-aligned text enters generic interface safe zones (such as HUD areas or Shorts controls), including explicit ASS positions. These warnings are advisory and can be false positives; review the video itself before publishing.
 
 ## End-to-end render verification
 
