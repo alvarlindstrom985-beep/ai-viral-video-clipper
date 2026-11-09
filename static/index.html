@@ -20,7 +20,7 @@
 </head>
 <body><main>
   <h1>AI Viral Video Clipper</h1>
-  <p class="muted">Skapa en batch med Shorts och längre YouTube-videor – färdiga som utkast för manuell publicering.</p>
+  <p class="muted">Skapa Shorts och längre videor med extra fokus på starka reaktioner, rage-ögonblick, humor och spontana utbrott – färdiga som utkast för manuell publicering.</p>
   <section class="panel">
     <label class="field">Välj stream eller inspelning
       <input id="video" type="file" accept="video/mp4,video/quicktime,video/x-matroska,video/webm">
@@ -48,7 +48,7 @@
         <select id="captionMode"><option value="word_by_word" selected>Ord för ord – karaoke-markering</option><option value="sentence">Vanliga meningar</option></select>
       </label>
     </div>
-    <p class="notice">Varje grundvideo får 3 versioner med olika introeffekt och ljudmix. Upp till 90 filer. En batch startas när du klickar – den schemaläggs inte automatiskt.</p>
+    <p class="notice">Urvalet ger extra vikt åt tydliga rage-/ilska-uttryck i transkriptet och starka spontana reaktioner. Hög ljudnivå ensam räknas inte som ilska. Varje grundvideo får 3 versioner med olika introeffekt och ljudmix. Upp till 90 filer. En batch startas när du klickar – den schemaläggs inte automatiskt.</p>
     <button id="run">Skapa videobatch</button>
     <p id="status">Redo. FFmpeg krävs. Installera faster-whisper och OpenCV för bättre analys.</p>
     <progress id="progress" value="0" max="100" hidden></progress>
@@ -159,9 +159,11 @@ async function pollBatch(batchId){
         const timing=document.createElement('p');
         timing.textContent=moment.start_seconds+'s – '+moment.end_seconds+'s';
         const score=document.createElement('p');score.className='score';score.textContent='Urvalspoäng: '+moment.score;
+        const rage=document.createElement('p');rage.className='pill';rage.textContent='Rage-signal: '+(moment.rage_score||0)+' poäng';
+        const ragePhrases=document.createElement('p');ragePhrases.className='muted';ragePhrases.textContent=(moment.rage_phrases||[]).length?'Uppfattade uttryck: '+moment.rage_phrases.join(', '):'Ingen tydlig rage-fras hittades';
         const reason=document.createElement('p');reason.className='muted';reason.textContent=moment.reason;
         const excerpt=document.createElement('p');excerpt.className='muted';excerpt.textContent=moment.transcript_excerpt||'Inget transkript tillgängligt.';
-        card.append(label,timing,score,reason,excerpt);highlightGrid.append(card);
+        card.append(label,timing,score,rage,ragePhrases,reason,excerpt);highlightGrid.append(card);
       });
       resultsEl.insertBefore(highlightGrid,report);
       let summary='Klart! '+state.created.files+' filer skapade. Allt är redo för manuell publicering.';
