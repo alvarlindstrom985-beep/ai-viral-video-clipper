@@ -48,7 +48,7 @@
         <select id="captionMode"><option value="word_by_word" selected>Ord för ord – karaoke-markering</option><option value="sentence">Vanliga meningar</option></select>
       </label>
     </div>
-    <p class="notice">Urvalet ger extra vikt åt tydliga rage-/ilska-uttryck i transkriptet och starka spontana reaktioner. Hög ljudnivå ensam räknas inte som ilska. Standard är 8 Shorts och 1 längre video. Nästan identiska klipp filtreras bort, så batchen kan bli mindre om källmaterialet saknar tillräckligt många unika höjdpunkter. Varje grundvideo får 3 versioner med olika introeffekt och ljudmix. En batch startas när du klickar – den schemaläggs inte automatiskt.</p>
+    <p class="notice">Urvalet ger extra vikt åt tydliga rage-/ilska-uttryck i transkriptet och starka spontana reaktioner. Hög ljudnivå ensam räknas inte som ilska. Standard är 8 Shorts och 1 längre video. Nästan identiska klipp filtreras bort, så batchen kan bli mindre om källmaterialet saknar tillräckligt många unika höjdpunkter. Varje grundvideo får 3 versioner: direkt citat, reaktions-hook och nyfikenhets-hook. Hooktexten animeras i början när transkript finns, med olika placering/visuell behandling. En batch startas när du klickar – den schemaläggs inte automatiskt.</p>
     <button id="run">Skapa videobatch</button>
     <p id="status">Redo. FFmpeg krävs. Installera faster-whisper och OpenCV för bättre analys.</p>
     <progress id="progress" value="0" max="100" hidden></progress>
@@ -166,7 +166,7 @@ function addSection(title,items){
     const card=document.createElement('article');card.className='clip';
     const video=document.createElement('video');video.controls=true;video.playsInline=true;video.preload='none';video.src=item.url;
     const label=document.createElement('p');label.textContent='Klipp '+item.clip_number+' · '+item.start+'–'+item.end+' s';
-    const variant=document.createElement('p');variant.className='pill';variant.textContent=item.variant.toUpperCase()+' · '+item.variant_label;
+    const variant=document.createElement('p');variant.className='pill';variant.textContent=item.variant.toUpperCase()+' · '+item.variant_label+(item.hook_overlay?' · animerad hooktext i videon':' · hooktext saknas');
     const score=document.createElement('p');score.className='score';score.textContent='Urvalspoäng: '+item.score;
     const quality=document.createElement('p');quality.className='pill';quality.textContent=item.quality_passed?'Teknisk kvalitetskontroll godkänd':'Kvalitetskontroll ej godkänd';
     const warnings=document.createElement('p');warnings.className='muted';warnings.textContent=(item.quality_warnings||[]).join(' · ');
