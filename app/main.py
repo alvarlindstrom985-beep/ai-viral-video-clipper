@@ -754,8 +754,8 @@ def learning_group_score(items, prior_mean, prior_strength=5.0):
     }
 
 
-def learned_category_bonus(categories, media_format):
-    """Apply a small confidence-adjusted ranking bonus from the channel's own results."""
+def learned_category_bonus(categories, media_format, performance_entries=None):
+    """Apply a small confidence-adjusted ranking bonus from cached channel results."""
     category_map = {
         "Rage/ilska-signal": "Rage/ilska",
         "Streamerreaktion": "Stark reaktion",
@@ -764,8 +764,9 @@ def learned_category_bonus(categories, media_format):
         "GTA-händelse": "GTA-händelse",
         "Aktivt ögonblick": "Annat"
     }
+    source_entries = read_performance_entries() if performance_entries is None else performance_entries
     entries = [
-        item for item in read_performance_entries()
+        item for item in source_entries
         if item.get("format") == media_format and item.get("views", 0) > 0
     ]
     if len(entries) < 3:
@@ -901,6 +902,8 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
         starts.append(centered_start)
     starts = sorted(set(round(value, 2) for value in starts))
 
+    # Load channel analytics once per analysis, not once for every candidate window.
+    learning_entries = read_performance_entries()
     scored = []
     for start in starts:
         end = start + clip_len
@@ -949,7 +952,7 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
 
         hook = score_opening_hook(start, levels, transcript)
         hook_bonus = hook["score"]
-        learning_bonus = learned_category_bonus(categories, media_format)
+        learning_bonus = learned_category_bonus(categories, media_format, learning_entries)
 
         # Measure whether activity is sustained across the clip, rather than one isolated spike.
         # Four buckets combine speech presence and audio activity; these are ranking hints, not
