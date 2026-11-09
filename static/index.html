@@ -76,6 +76,16 @@
       <label class="field">Nya prenumeranter<input name="subscribers_gained" type="number" min="0" step="1" value="0"></label>
       <button type="submit">Spara YouTube-resultat</button>
     </form>
+    <h3>Importera CSV från YouTube Studio</h3>
+    <p class="muted">I YouTube Studio: Analytics → Avancerat läge → välj videor och mätvärden → Exportera aktuell vy. Importen läser engelska och vanliga svenska kolumnnamn. Om kategori, format och variant inte finns i filen används standardvalen nedan.</p>
+    <form id="performanceImportForm" class="settings">
+      <label class="field">CSV-fil från YouTube Studio<input name="file" type="file" accept=".csv,text/csv" required></label>
+      <label class="field">Standardkategori<select name="category"><option>Rage/ilska</option><option>Stark reaktion</option><option>Humor/skratt</option><option>GTA-händelse</option><option selected>Annat</option></select></label>
+      <label class="field">Standardformat<select name="media_format"><option value="short">Shorts</option><option value="long">Längre video</option></select></label>
+      <label class="field">Standardvariant<select name="variant"><option value="v1">V1 – Clean</option><option value="v2">V2 – Flash</option><option value="v3">V3 – Color</option></select></label>
+      <button type="submit">Importera statistik</button>
+    </form>
+    <p id="performanceImportStatus" class="muted">Ingen CSV importerad ännu.</p>
     <p id="performanceStatus" class="muted">Laddar resultat...</p>
     <div id="performanceInsights" class="clips"></div>
     <p class="notice">Tips: jämför gärna statistik efter ungefär samma tid sedan publicering, till exempel efter 48 timmar. För Shorts är Stayed to watch och genomsnittlig visningsprocent särskilt användbara. Inga YouTube-inloggningar eller lösenord behövs.</p>
@@ -284,6 +294,24 @@ performanceForm.addEventListener('submit',async event=>{
     performanceStatus.textContent='Resultatet sparades. Jämförelsen är uppdaterad.';
     performanceForm.reset();
   }catch(error){performanceStatus.textContent=error.message}
+});
+
+const performanceImportForm=document.querySelector('#performanceImportForm');
+const performanceImportStatus=document.querySelector('#performanceImportStatus');
+performanceImportForm.addEventListener('submit',async event=>{
+  event.preventDefault();
+  const formData=new FormData(performanceImportForm);
+  performanceImportStatus.textContent='Läser in CSV och matchar YouTube-kolumner...';
+  try{
+    const response=await fetch('/api/performance/import-csv',{method:'POST',body:formData});
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.detail||'CSV-importen misslyckades');
+    renderPerformance({insights:data.insights});
+    performanceStatus.textContent=insightsText(data.insights);
+    performanceImportStatus.textContent=data.imported+' videor importerade · '+data.duplicates+' dubletter hoppades över · '+data.skipped+' rader kunde inte läsas.';
+    if(data.errors&&data.errors.length)performanceImportStatus.textContent+=' Exempel: '+data.errors.join(' | ');
+    performanceImportForm.reset();
+  }catch(error){performanceImportStatus.textContent=error.message}
 });
 loadPerformance();
 </script></body></html>
