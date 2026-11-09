@@ -341,7 +341,7 @@ def normalize_ai_review(payload):
             return max(0, min(100, int(round(float(value)))))
         except (TypeError, ValueError):
             return default
-    def short_list(value, limit=4):
+    def short_list(value, limit=3):
         if not isinstance(value, list):
             return []
         return [str(item).strip()[:180] for item in value if str(item).strip()][:limit]
@@ -783,7 +783,7 @@ def learned_category_bonus(categories, media_format):
         # Shrink low-confidence groups toward the channel baseline; keep influence deliberately small.
         delta = (estimate["adjusted_score"] - overall) * 0.12
         possible.append(max(-3.0, min(3.0, delta)))
-    return round(max(possible, default=0.0), 2)
+    return round(max(possible, key=abs, default=0.0), 2)
 
 
 def score_opening_hook(start: float, levels, transcript, hook_seconds: float = 3.0):
