@@ -344,11 +344,28 @@ function renderPerformance(data){
       const line=document.createElement('p');line.className='muted';
       line.textContent=(item.format==='short'?'Shorts':'Längre video')+' · '+item.cohort+' · '+item.samples+' videor · '+item.average_score+'/100 · '+Math.round(item.average_views).toLocaleString('sv-SE')+' visningar · visat '+item.average_retention+' % · Stayed to watch '+item.average_stayed+' % · snittid '+item.average_view_duration_sec+' s';
       ageCard.append(line);
+      const behavior=item.viewer_behavior||{};
+      const behaviorLine=document.createElement('p');behaviorLine.className='muted';
+      const behaviorParts=[
+        behavior.likes_per_1000_views===null||behavior.likes_per_1000_views===undefined?null:'Gilla '+behavior.likes_per_1000_views+'/1 000',
+        behavior.comments_per_1000_views===null||behavior.comments_per_1000_views===undefined?null:'Kommentarer '+behavior.comments_per_1000_views+'/1 000',
+        behavior.shares_per_1000_views===null||behavior.shares_per_1000_views===undefined?null:'Delningar '+behavior.shares_per_1000_views+'/1 000',
+        behavior.subscribers_gained_per_1000_views===null||behavior.subscribers_gained_per_1000_views===undefined?null:'Prenumeranter '+behavior.subscribers_gained_per_1000_views+'/1 000',
+        behavior.engaged_views_pct===null||behavior.engaged_views_pct===undefined?null:'Engagerade visningar '+behavior.engaged_views_pct+' %'
+      ].filter(Boolean);
+      if(behaviorParts.length){behaviorLine.textContent=behaviorParts.join(' · ');ageCard.append(behaviorLine);}
     });
     (insights.age_comparisons||[]).slice(0,6).forEach(item=>{
       const line=document.createElement('p');line.className='score';
       line.textContent=(item.dimension==='category'?'Kategori: ':'Variant: ')+item.label+' · '+item.age_cohort+' · '+item.adjusted_score+'/100 · '+item.samples+' videor';
       ageCard.append(line);
+      const behavior=item.viewer_behavior||{};
+      const rates=[
+        behavior.likes_per_1000_views===null||behavior.likes_per_1000_views===undefined?null:'gilla '+behavior.likes_per_1000_views,
+        behavior.shares_per_1000_views===null||behavior.shares_per_1000_views===undefined?null:'delningar '+behavior.shares_per_1000_views,
+        behavior.subscribers_gained_per_1000_views===null||behavior.subscribers_gained_per_1000_views===undefined?null:'prenumeranter '+behavior.subscribers_gained_per_1000_views
+      ].filter(Boolean);
+      if(rates.length){const detail=document.createElement('p');detail.className='muted';detail.textContent='Per 1 000 visningar: '+rates.join(' · ');ageCard.append(detail);}
     });
     performanceInsights.append(ageCard);
   }else{
