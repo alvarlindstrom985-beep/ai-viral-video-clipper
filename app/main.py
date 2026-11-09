@@ -1328,6 +1328,8 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     "matched_phrases": candidate["matched_phrases"],
                     "rage_score": candidate["rage_score"],
                     "learning_bonus": candidate["learning_bonus"],
+                    "selection_diversity_adjustment": candidate.get("selection_diversity_adjustment", 0),
+                    "selection_reason": candidate.get("selection_reason", "Vald efter grundpoäng"),
                     "hook_score": candidate.get("hook_score", 0.0),
                     "hook_signals": candidate.get("hook_signals", []),
                     "retention_score": candidate.get("retention_score", 0),
