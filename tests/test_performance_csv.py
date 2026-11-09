@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from app.main import normalize_csv_header, parse_csv_metric, candidate_similarity, is_near_duplicate, retention_signal_score, normalize_ai_review, learning_group_score, learned_category_bonus, performance_age_cohort, parse_publish_age_hours, build_performance_summary
+from app.main import normalize_csv_header, parse_csv_metric, candidate_similarity, is_near_duplicate, retention_signal_score, normalize_ai_review, learning_group_score, learned_category_bonus, performance_age_cohort, parse_publish_age_hours, build_performance_summary, performance_viewer_behavior
 
 
 class YouTubeCsvMetricTests(unittest.TestCase):
@@ -23,6 +23,26 @@ class YouTubeCsvMetricTests(unittest.TestCase):
 
 
 class PublicationAgeLearningTests(unittest.TestCase):
+    def test_viewer_behavior_uses_per_1000_view_rates(self):
+        result = performance_viewer_behavior([
+            {"views": 1000, "engaged_views": 600, "likes": 50, "comments": 10, "shares": 5, "subscribers_gained": 2},
+            {"views": 2000, "engaged_views": 1000, "likes": 100, "comments": 20, "shares": 10, "subscribers_gained": 4}
+        ])
+        self.assertEqual(result["engaged_views_pct"], 55.0)
+        self.assertEqual(result["likes_per_1000_views"], 50.0)
+        self.assertEqual(result["comments_per_1000_views"], 10.0)
+        self.assertEqual(result["shares_per_1000_views"], 5.0)
+        self.assertEqual(result["subscribers_gained_per_1000_views"], 2.0)
+
+    def test_viewer_behavior_ignores_missing_metrics_and_zero_views(self):
+        result = performance_viewer_behavior([
+            {"views": 0, "likes": 99},
+            {"views": 100, "likes": None, "shares": 2}
+        ])
+        self.assertIsNone(result["likes_per_1000_views"])
+        self.assertEqual(result["likes_per_1000_views_samples"], 0)
+        self.assertEqual(result["shares_per_1000_views"], 20.0)
+
     def test_age_cohorts_have_expected_boundaries(self):
         self.assertEqual(performance_age_cohort(24), "0–48 timmar")
         self.assertEqual(performance_age_cohort(72), "2–7 dagar")
