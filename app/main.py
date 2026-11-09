@@ -1691,6 +1691,26 @@ def get_batch_status(batch_id: str):
     }
 
 
+@app.get("/api/batch/recent")
+def list_recent_batch_jobs():
+    """List persisted batch jobs so the dashboard can recover after a page/server restart."""
+    items = []
+    for batch_id, state in BATCH_JOBS.items():
+        items.append({
+            "batch_id": batch_id,
+            "status": state.get("status", "unknown"),
+            "stage": state.get("stage", ""),
+            "completed": state.get("completed", 0),
+            "total": state.get("total", 0),
+            "created_at": state.get("created_at"),
+            "updated_at": state.get("updated_at"),
+            "can_resume": state.get("status") in {"interrupted", "failed"},
+            "created": state.get("created")
+        })
+    items.sort(key=lambda item: item.get("updated_at") or item.get("created_at") or "", reverse=True)
+    return {"jobs": items[:20]}
+
+
 @app.get("/api/batch/report/{batch_id}")
 def download_highlight_report(batch_id: str):
     if not re.fullmatch(r"[a-f0-9]{12}", batch_id):
