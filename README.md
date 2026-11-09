@@ -13,6 +13,12 @@ A local-first app that ranks moments in uploaded videos and renders vertical cli
 - Choose 1–8 clips and a duration of 15–60 seconds
 - Preview and download the generated clips
 
+## Storage monitoring and safe cleanup
+
+The dashboard's **Lagring och diskutrymme** panel reports filesystem free space, total upload/output usage, and a preview of old generated files. It warns when disk usage reaches 85% or free space drops below a 512 MiB safety reserve. Uploads are rejected with HTTP 507 when writing the next chunk would breach that reserve, and new batches are checked against an estimated render-space requirement before they are queued.
+
+The cleanup preview identifies known generated exports older than 30 days and source uploads older than 30 days. It only considers files matching the app's generated ID-based naming patterns; it never targets the performance data, SQLite job database, or unknown files. Sources and outputs for queued, running, interrupted, or failed jobs are protected so recoverable work is not removed. Cleanup is **manual**: inspect the preview, then press the separate cleanup button. Keep backups of anything you may want later. The estimate is a safety heuristic; actual render sizes depend on source bitrate, codec, and settings.
+
 ## Persistent batch jobs and recovery
 
 Batch job state is stored in `outputs/batch_jobs.sqlite3`, including the selected source job, render settings, progress, and completed export metadata. After a server restart, jobs that were queued or running are restored as **interrupted** rather than disappearing. Use `POST /api/batch/resume/{batch_id}` to restart an interrupted or failed batch with its saved settings. The original uploaded source file must still exist in the `uploads/` directory. A restart reruns the batch from the beginning; it does not continue an FFmpeg render from the exact frame where it stopped. Keep the `uploads/` and `outputs/` directories on persistent storage, and run a single application process for this local MVP.
