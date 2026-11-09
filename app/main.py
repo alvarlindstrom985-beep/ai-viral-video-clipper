@@ -1325,6 +1325,39 @@ def clip_boundary_quality(start: float, end: float, transcript, anchors=None):
         "speech_cut_at_end": cut_end
     }
 
+
+def payoff_timing_quality(start: float, end: float, anchors=None):
+    """Score whether a meaningful reaction/payoff lands late enough, with room after it."""
+    duration = max(0.01, end - start)
+    weights = {"speech": 3.0, "audio": 1.5, "visual": 1.0}
+    candidates = []
+    for anchor in anchors or []:
+        try:
+            timestamp = float(anchor.get("time", -1))
+        except (TypeError, ValueError):
+            continue
+        if start <= timestamp <= end:
+            position = (timestamp - start) / duration
+            if position >= 0.55:
+                kind = anchor.get("kind", "unknown")
+                candidates.append((weights.get(kind, 0.5), position, kind))
+    if not candidates:
+        return {"score": 0, "reason": None, "anchor_kind": None, "position": None}
+    _, position, kind = max(candidates, key=lambda item: (item[0], -abs(item[1] - 0.8)))
+    if position > 0.94:
+        return {"score": -4, "reason": "payoff ligger för nära klippets slut",
+                "anchor_kind": kind, "position": round(position, 3)}
+    if 0.68 <= position <= 0.90:
+        return {"score": 4, "reason": "payoff kommer sent med utrymme efteråt",
+                "anchor_kind": kind, "position": round(position, 3)}
+    if 0.55 <= position < 0.68:
+        return {"score": 2, "reason": "payoff kommer i klippets senare del",
+                "anchor_kind": kind, "position": round(position, 3)}
+    return {"score": 0, "reason": None, "anchor_kind": kind,
+            "position": round(position, 3)}
+
+
+
 def score_windows(duration: float, clip_len: float, levels, transcript, clip_count: int, visual_samples=None, allow_overlap=True, media_format='short'):
     latest_start = max(0.0, duration - clip_len)
     step = max(3.0, min(8.0, clip_len / 5))
@@ -1438,12 +1471,14 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
         payoff_signal = any(phrase in payoff_text for phrase in payoff_phrases)
         payoff_signal = payoff_signal or bool(LAUGHTER_PATTERN.search(payoff_text))
         payoff_score = 2.0 if payoff_signal else 0.0
+        payoff_timing = payoff_timing_quality(start, end, anchors)
+        payoff_timing_score = payoff_timing["score"]
 
         retention = retention_signal_score(
             hook_bonus, sum(bucket_activity), signal_families,
             payoff_score, speech_density
         )
-        score += learning_bonus + hook_bonus + pacing_score + diversity_score + payoff_score + boundary_score
+        score += learning_bonus + hook_bonus + pacing_score + diversity_score + payoff_score + boundary_score + payoff_timing_score
 
         matched_phrases = list(dict.fromkeys(funny_hits + reaction_hits + rage_hits + game_hits))
         reason_parts = []
@@ -1469,6 +1504,10 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
             "signal_diversity_score": diversity_score,
             "signal_families": signal_families,
             "payoff_score": payoff_score,
+            "payoff_timing_score": payoff_timing_score,
+            "payoff_timing_reason": payoff_timing["reason"],
+            "payoff_anchor_kind": payoff_timing["anchor_kind"],
+            "payoff_position": payoff_timing["position"],
             "boundary_quality_score": boundary_score,
             "boundary_quality_reasons": boundary["reasons"],
             "speech_cut_at_start": boundary["speech_cut_at_start"],
@@ -1478,7 +1517,7 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
             "retention_reasons": retention["reasons"],
             "retention_components": retention["components"],
             "viral_ranking_score": round(score, 2),
-            "reason": " · ".join(reason_parts + (["stark öppning"] if hook_bonus >= 4 else []) + (["aktivt genom klippet"] if pacing_score >= 4.5 else []) + (["tydlig payoff mot slutet"] if payoff_score else []) + boundary["reasons"]),
+            "reason": " · ".join(reason_parts + (["stark öppning"] if hook_bonus >= 4 else []) + (["aktivt genom klippet"] if pacing_score >= 4.5 else []) + (["tydlig payoff mot slutet"] if payoff_score else []) + ([payoff_timing["reason"]] if payoff_timing["reason"] else []) + boundary["reasons"]),
             "audio_activity": round(audio_score, 3),
             "matched_phrases": matched_phrases,
             "categories": categories,
