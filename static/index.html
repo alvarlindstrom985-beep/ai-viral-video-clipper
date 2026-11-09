@@ -13,7 +13,7 @@
     #status{margin:16px 0;color:#c7d0e2}.settings{display:flex;gap:14px;flex-wrap:wrap;margin-top:18px}
     .field{display:grid;gap:6px;color:#c7d0e2}.clips{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:20px}
     video{width:100%;max-height:480px;background:#000;border-radius:12px}.clip{background:#252d40;padding:12px;border-radius:14px}
-    .score{color:#b8aaff;font-weight:700}.download{color:#c9c2ff}
+    .score{color:#b8aaff;font-weight:700}.download{color:#c9c2ff}.links{display:flex;gap:14px;flex-wrap:wrap}.tag{font-size:.82rem;color:#d2caff;background:#37304f;padding:4px 8px;border-radius:8px;display:inline-block;margin:3px 3px 3px 0}
     .notice{font-size:.9rem;color:#aab4c8;margin-top:20px}
   </style>
 </head>
@@ -33,7 +33,7 @@
     <div><button id="run">Analysera video och skapa klipp</button></div>
     <p id="status">Redo. FFmpeg krävs. Installera tillvalet faster-whisper för talanalys.</p>
     <div id="clips" class="clips"></div>
-    <p class="notice">Analysen rangordnar kandidater med talaktivitet, reaktionsfraser och ljudnivå. Resultaten behöver granskas manuellt – ingen algoritm kan garantera viral spridning.</p>
+    <p class="notice">Analysen väger samman talaktivitet, reaktionsfraser och GTA-relaterade uttryck. Om Whisper är installerat får varje klipp även en separat undertextfil (.srt). Resultaten behöver granskas manuellt – ingen algoritm kan garantera viral spridning.</p>
   </section>
 </main>
 <script>
@@ -58,8 +58,21 @@ button.addEventListener('click',async()=>{
       const label=document.createElement('p');label.textContent='Klipp '+(i+1)+' · start '+clip.start+' s';
       const score=document.createElement('p');score.className='score';score.textContent='Poäng: '+clip.score;
       const reason=document.createElement('p');reason.className='muted';reason.textContent=clip.reason;
-      const link=document.createElement('a');link.className='download';link.href=clip.url;link.download=clip.name;link.textContent='Ladda ner klippet';
-      card.append(video,label,score,reason,link);clipsEl.append(card);
+      const links=document.createElement('div');links.className='links';
+      const link=document.createElement('a');link.className='download';link.href=clip.url;link.download=clip.name;link.textContent='Ladda ner video';
+      links.append(link);
+      if(clip.subtitle_url){
+        const subtitleLink=document.createElement('a');subtitleLink.className='download';
+        subtitleLink.href=clip.subtitle_url;subtitleLink.download=clip.subtitle_name;
+        subtitleLink.textContent='Ladda ner undertexter (.srt)';links.append(subtitleLink);
+      }
+      card.append(video,label,score,reason);
+      if(clip.matched_phrases && clip.matched_phrases.length){
+        const tags=document.createElement('div');
+        clip.matched_phrases.slice(0,5).forEach(phrase=>{const tag=document.createElement('span');tag.className='tag';tag.textContent=phrase;tags.append(tag)});
+        card.append(tags);
+      }
+      card.append(links);clipsEl.append(card);
     });
     statusEl.textContent='Klart! Analys: '+result.analysis+'. '+result.note;
   }catch(error){statusEl.textContent=error.message}
