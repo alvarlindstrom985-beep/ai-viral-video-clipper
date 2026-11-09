@@ -58,6 +58,19 @@ class AdaptiveLearningTests(unittest.TestCase):
         self.assertGreater(bonus, 0)
         self.assertLessEqual(abs(bonus), 3.0)
 
+    def test_category_bonus_can_penalize_underperforming_categories(self):
+        entries = [
+            {"format": "short", "views": 100, "performance_score": 30, "category": "Rage/ilska"}
+            for _ in range(4)
+        ] + [
+            {"format": "short", "views": 100, "performance_score": 80, "category": "Humor/skratt"}
+            for _ in range(4)
+        ]
+        with patch("app.main.read_performance_entries", return_value=entries):
+            bonus = learned_category_bonus(["Rage/ilska-signal"], "short")
+        self.assertLess(bonus, 0)
+        self.assertGreaterEqual(bonus, -3.0)
+
 
 class ClipSimilarityTests(unittest.TestCase):
     def test_same_time_window_is_duplicate(self):
