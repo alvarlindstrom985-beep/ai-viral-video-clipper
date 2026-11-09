@@ -6,76 +6,87 @@
   <title>AI Viral Video Clipper</title>
   <style>
     *{box-sizing:border-box}body{margin:0;background:#10131b;color:#f4f6fb;font:16px system-ui,sans-serif}
-    main{max-width:1000px;margin:48px auto;padding:24px}.panel{background:#1b2130;border:1px solid #30394d;border-radius:18px;padding:24px}
-    h1{font-size:clamp(2rem,5vw,3.2rem);margin:0 0 8px}.muted{color:#aab4c8}
+    main{max-width:1100px;margin:42px auto;padding:22px}.panel{background:#1b2130;border:1px solid #30394d;border-radius:18px;padding:24px}
+    h1{font-size:clamp(2rem,5vw,3.2rem);margin:0 0 8px}.muted,.notice{color:#aab4c8}
     input,select,button{font:inherit;border-radius:10px;padding:12px}input,select{max-width:100%;background:#0f1420;color:white;border:1px solid #46516a}
-    button{background:#8b7cff;color:#111;font-weight:700;border:0;cursor:pointer;margin:8px 0}button:disabled{opacity:.5}
-    #status{margin:16px 0;color:#c7d0e2}.settings{display:flex;gap:14px;flex-wrap:wrap;margin-top:18px}
-    .field{display:grid;gap:6px;color:#c7d0e2}.clips{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:20px}
-    video{width:100%;max-height:480px;background:#000;border-radius:12px}.clip{background:#252d40;padding:12px;border-radius:14px}
-    .score{color:#b8aaff;font-weight:700}.download{color:#c9c2ff}.links{display:flex;gap:14px;flex-wrap:wrap}.tag{font-size:.82rem;color:#d2caff;background:#37304f;padding:4px 8px;border-radius:8px;display:inline-block;margin:3px 3px 3px 0}
-    .notice{font-size:.9rem;color:#aab4c8;margin-top:20px}
+    button{background:#8b7cff;color:#111;font-weight:700;border:0;cursor:pointer;margin:12px 0}button:disabled{opacity:.5}
+    #status{margin:16px 0;color:#c7d0e2;white-space:pre-wrap}.settings{display:flex;gap:14px;flex-wrap:wrap;margin-top:18px}
+    .field{display:grid;gap:6px;color:#c7d0e2}.clips{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;margin-top:16px}
+    video{width:100%;max-height:420px;background:#000;border-radius:12px}.clip{background:#252d40;padding:12px;border-radius:14px;min-width:0}
+    .score{color:#b8aaff;font-weight:700}.download{color:#c9c2ff}.links{display:flex;gap:14px;flex-wrap:wrap}
+    .notice{font-size:.9rem;margin-top:20px;line-height:1.5}.group-title{margin:28px 0 8px}
+    .pill{display:inline-block;padding:4px 8px;border-radius:8px;background:#37304f;color:#d2caff;font-size:.82rem}
   </style>
 </head>
 <body><main>
   <h1>AI Viral Video Clipper</h1>
-  <p class="muted">Hitta intressanta ögonblick och skapa vertikala klipp för Shorts, Reels och TikTok.</p>
+  <p class="muted">Skapa en hel dags batch med Shorts och längre YouTube-videor – färdiga som utkast för manuell publicering.</p>
   <section class="panel">
-    <input id="video" type="file" accept="video/mp4,video/quicktime,video/x-matroska,video/webm">
+    <label class="field">Välj stream eller inspelning
+      <input id="video" type="file" accept="video/mp4,video/quicktime,video/x-matroska,video/webm">
+    </label>
     <div class="settings">
-      <label class="field">Antal klipp
-        <select id="count"><option value="3">3 klipp</option><option value="5">5 klipp</option><option value="8">8 klipp</option></select>
+      <label class="field">Shorts per batch
+        <select id="shortCount"><option value="25" selected>25 Shorts</option><option value="15">15 Shorts</option><option value="10">10 Shorts</option></select>
       </label>
-      <label class="field">Längd per klipp
-        <select id="length"><option value="20">20 sekunder</option><option value="30" selected>30 sekunder</option><option value="45">45 sekunder</option><option value="60">60 sekunder</option></select>
+      <label class="field">Längre videor per batch
+        <select id="longCount"><option value="5" selected>5 videor</option><option value="3">3 videor</option><option value="0">Inga</option></select>
+      </label>
+      <label class="field">Längd på varje Short
+        <select id="shortLength"><option value="20">20 sekunder</option><option value="30" selected>30 sekunder</option><option value="45">45 sekunder</option><option value="60">60 sekunder</option></select>
+      </label>
+      <label class="field">Längd på längre video
+        <select id="longLength"><option value="180" selected>3 minuter</option><option value="240">4 minuter</option><option value="300">5 minuter</option><option value="420">7 minuter</option></select>
       </label>
     </div>
-    <div><button id="run">Analysera video och skapa klipp</button></div>
-    <p id="status">Redo. FFmpeg krävs. Installera tillvalet faster-whisper för talanalys.</p>
-    <div id="clips" class="clips"></div>
-    <p class="notice">Analysen prioriterar streamerns humor och reaktioner. Med tillvalet OpenCV letar den även efter ansikten, möjliga leenden och rörelse i videobilden. Om Whisper är installerat får varje klipp även en separat undertextfil (.srt). Resultaten behöver granskas manuellt – ingen algoritm kan garantera viral spridning.</p>
+    <p class="notice">Varje grundvideo får 3 versioner med olika introeffekt och ljudmix. Det ger upp till 75 Shorts-filer + 15 längre videofiler (90 filer totalt). Det är en batch på begäran, inte en automatisk schemaläggning.</p>
+    <button id="run">Skapa dagens videobatch</button>
+    <p id="status">Redo. FFmpeg krävs. Installera faster-whisper och OpenCV för bättre analys.</p>
+    <div id="results"></div>
+    <p class="notice">Viktigt: Inget publiceras automatiskt. Alla filer sparas som utkast som du kan förhandsgranska, ladda ner och lägga upp själv. För att få 25 + 5 olika ögonblick behöver källvideon vara tillräckligt lång; kortare material ger färre unika klipp. Varianterna ändrar ljudmix och introeffekt – de lägger inte till olika musikspår.</p>
   </section>
 </main>
 <script>
 const fileInput=document.querySelector('#video'), button=document.querySelector('#run');
-const statusEl=document.querySelector('#status'), clipsEl=document.querySelector('#clips');
+const statusEl=document.querySelector('#status'), resultsEl=document.querySelector('#results');
+function addSection(title,items){
+  if(!items.length)return;
+  const heading=document.createElement('h2');heading.className='group-title';heading.textContent=title;resultsEl.append(heading);
+  const grid=document.createElement('div');grid.className='clips';
+  items.forEach(item=>{
+    const card=document.createElement('article');card.className='clip';
+    const video=document.createElement('video');video.controls=true;video.playsInline=true;video.preload='none';video.src=item.url;
+    const label=document.createElement('p');label.textContent='Klipp '+item.clip_number+' · '+item.start+'–'+item.end+' s';
+    const variant=document.createElement('p');variant.className='pill';variant.textContent=item.variant.toUpperCase()+' · '+item.variant_label;
+    const score=document.createElement('p');score.className='score';score.textContent='Urvalspoäng: '+item.score;
+    const reason=document.createElement('p');reason.className='muted';reason.textContent=item.reason;
+    const link=document.createElement('a');link.className='download';link.href=item.url;link.download=item.name;link.textContent='Ladda ner utkast';
+    card.append(video,label,variant,score,reason,link);grid.append(card);
+  });
+  resultsEl.append(grid);
+}
 button.addEventListener('click',async()=>{
   if(!fileInput.files.length){statusEl.textContent='Välj en videofil först.';return}
-  button.disabled=true;clipsEl.innerHTML='';
+  button.disabled=true;resultsEl.innerHTML='';
   try{
-    statusEl.textContent='Laddar upp videon...';
+    statusEl.textContent='Laddar upp källvideon...';
     const data=new FormData();data.append('video',fileInput.files[0]);
     const uploaded=await fetch('/api/upload',{method:'POST',body:data});
     const job=await uploaded.json();if(!uploaded.ok)throw new Error(job.detail||'Uppladdningen misslyckades');
-    statusEl.textContent='Analyserar ljud och letar efter intressanta ögonblick. Det kan ta en stund...';
-    const count=document.querySelector('#count').value;
-    const length=document.querySelector('#length').value;
-    const response=await fetch('/api/process/'+job.job_id+'?clip_count='+count+'&clip_length='+length,{method:'POST'});
-    const result=await response.json();if(!response.ok)throw new Error(result.detail||'Kunde inte skapa klipp');
-    result.clips.forEach((clip,i)=>{
-      const card=document.createElement('article');card.className='clip';
-      const video=document.createElement('video');video.controls=true;video.playsInline=true;video.src=clip.url;
-      const label=document.createElement('p');label.textContent='Klipp '+(i+1)+' · '+clip.start+'–'+(clip.end??(clip.start+clip.duration))+' s ('+(clip.duration??'')+' s)'+(clip.reaction_anchor!==null && clip.reaction_anchor!==undefined?' · reaktionssignal vid '+clip.reaction_anchor+' s':'');
-      const score=document.createElement('p');score.className='score';score.textContent='Poäng: '+clip.score+' · Streamer: '+(clip.streamer_score||0)+' · Visuellt: '+(clip.visual_score||0)+' · GTA: '+(clip.game_score||0);
-      const reason=document.createElement('p');reason.className='muted';reason.textContent=clip.reason;
-      const links=document.createElement('div');links.className='links';
-      const link=document.createElement('a');link.className='download';link.href=clip.url;link.download=clip.name;link.textContent='Ladda ner video';
-      links.append(link);
-      if(clip.subtitle_url){
-        const subtitleLink=document.createElement('a');subtitleLink.className='download';
-        subtitleLink.href=clip.subtitle_url;subtitleLink.download=clip.subtitle_name;
-        subtitleLink.textContent='Ladda ner undertexter (.srt)';links.append(subtitleLink);
-      }
-      card.append(video,label,score,reason);
-      if(clip.categories && clip.categories.length){const category=document.createElement('p');category.className='muted';category.textContent='Typ: '+clip.categories.join(', ');card.append(category)}
-      if(clip.matched_phrases && clip.matched_phrases.length){
-        const tags=document.createElement('div');
-        clip.matched_phrases.slice(0,5).forEach(phrase=>{const tag=document.createElement('span');tag.className='tag';tag.textContent=phrase;tags.append(tag)});
-        card.append(tags);
-      }
-      card.append(links);clipsEl.append(card);
-    });
-    statusEl.textContent='Klart! Analys: '+result.analysis+'. Visuell analys: '+(result.visual_analysis_available?'aktiv':'inte tillgänglig – installera requirements-vision.txt')+'. '+result.note;
+    const shorts=document.querySelector('#shortCount').value;
+    const longs=document.querySelector('#longCount').value;
+    const shortLength=document.querySelector('#shortLength').value;
+    const longLength=document.querySelector('#longLength').value;
+    statusEl.textContent='Analyserar streamen och renderar upp till 90 videofiler. Det kan ta lång tid beroende på videons längd och datorns prestanda...';
+    const response=await fetch('/api/batch/'+job.job_id+'?short_count='+shorts+'&long_count='+longs+'&variants=3&short_length='+shortLength+'&long_length='+longLength,{method:'POST'});
+    const result=await response.json();if(!response.ok)throw new Error(result.detail||'Kunde inte skapa batchen');
+    addSection('Shorts – '+result.created.shorts+' grundklipp / '+(result.created.shorts*3)+' versioner',result.videos.filter(v=>v.type==='short'));
+    addSection('Längre videor – '+result.created.long_videos+' grundklipp / '+(result.created.long_videos*3)+' versioner',result.videos.filter(v=>v.type==='long'));
+    let summary='Klart! Skapade '+result.created.shorts+' Shorts och '+result.created.long_videos+' längre grundvideor. Totalt '+result.created.files+' filer.';
+    if(result.failed_files.length)summary+=' Misslyckade exporter: '+result.failed_files.length+'.';
+    if(result.created.shorts<Number(shorts)||result.created.long_videos<Number(longs))summary+=' Källvideon gav inte tillräckligt många unika segment för hela målet.';
+    summary+=' Allt är sparat för manuell publicering – inget har publicerats automatiskt.';
+    statusEl.textContent=summary;
   }catch(error){statusEl.textContent=error.message}
   finally{button.disabled=false}
 });
