@@ -267,6 +267,26 @@ def run_command(command):
     return subprocess.run(command, capture_output=True, text=True)
 
 
+def inspect_render_quality(path: Path, expected_duration: float, expected_width: int, expected_height: int):
+    if not path.is_file() or path.stat().st_size < 10000:
+        return {"passed": False, "reason": "Filen saknas eller är för liten", "warnings": []}
+    probe = run_command(["ffprobe", "-v", "error", "-show_entries", "format=duration:stream=codec_type,width,height", "-of", "json", str(path)])
+    if probe.returncode != 0:
+        return {"passed": False, "reason": "FFprobe kunde inte läsa filen", "warnings": []}
+    try:
+        data = json.loads(probe.stdout or "{}")
+        duration = float(data.get("format", {}).get("duration", 0))
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return {"passed": False, "reason": "Ogiltig videometadata", "warnings": []}
+    streams = data.get("streams", [])
+    video = next((x for x in streams if x.get("codec_type") == "video"), None)
+    audio = next((x for x in streams if x.get("codec_type") == "audio"), None)
+    valid_video = video is not None and int(video.get("width", 0)) == expected_width and int(video.get("height", 0)) == expected_height
+    valid_duration = expected_duration * 0.90 <= duration <= expected_duration + 1.5
+    warnings = [] if audio else ["Inget ljudspår hittades"]
+    return {"passed": bool(valid_video and valid_duration), "reason": "OK" if valid_video and valid_duration else "Fel upplösning, saknat videospår eller fel längd", "warnings": warnings, "duration": round(duration, 2)}
+
+
 def get_duration(source: Path) -> float:
     result = run_command([
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -927,6 +947,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
         planned = sum(len(candidates) * len(recipes) for _, candidates, _ in groups)
         state.update({"total": planned, "stage": "Renderar videor"})
         results, failures = [], []
+        quality_checks = []
         for media_type, candidates, clip_duration in groups:
             for clip_index, candidate in enumerate(candidates, 1):
                 for recipe in recipes:
@@ -969,6 +990,13 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     if rendered.returncode != 0 or not out.exists():
                         failures.append(filename)
                         state["last_error"] = (rendered.stderr or "FFmpeg error")[-500:]
+                        continue
+                    expected_width, expected_height = (1080, 1920) if media_type == "short" else (1920, 1080)
+                    quality = inspect_render_quality(out, clip_duration, expected_width, expected_height)
+                    quality_checks.append({"name": filename, **quality})
+                    if not quality["passed"]:
+                        failures.append(filename)
+                        out.unlink(missing_ok=True)
                         continue
                     results.append({
                         "name": filename, "url": f"/api/clips/{filename}",
@@ -1028,6 +1056,9 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
             },
             "requested": {"shorts": short_count, "long_videos": long_count, "variants_per_video": 3},
             "failed_files": failures,
+            "quality_checks": quality_checks,
+            "quality_passed": sum(1 for item in quality_checks if item.get("passed")),
+            "quality_rejected": sum(1 for item in quality_checks if not item.get("passed")),
             "analysis": "Whisper transcript + audio activity" if transcript is not None else "Audio activity fallback",
             "visual_analysis_available": visual_samples is not None,
             "transcript_available": transcript is not None,
@@ -1106,7 +1137,10 @@ def get_batch_status(batch_id: str):
         "report_url": f"/api/batch/report/{batch_id}" if state.get("status") == "completed" else None,
         "subtitles_burned": state.get("subtitles_burned", False),
         "transcript_available": state.get("transcript_available", False),
-        "failed_files": state.get("failed_files", [])
+        "failed_files": state.get("failed_files", []),
+        "quality_checks": state.get("quality_checks", []),
+        "quality_passed": state.get("quality_passed", 0),
+        "quality_rejected": state.get("quality_rejected", 0)
     }
 
 
