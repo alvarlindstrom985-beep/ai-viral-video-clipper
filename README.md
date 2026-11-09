@@ -13,6 +13,10 @@ A local-first app that ranks moments in uploaded videos and renders vertical cli
 - Choose 1–8 clips and a duration of 15–60 seconds
 - Preview and download the generated clips
 
+## End-to-end render verification
+
+The GitHub Actions test suite installs FFmpeg and runs a real render integration test using a generated synthetic test pattern and tone (not third-party footage). It exercises the batch worker, three edit variants, vertical scaling/cropping, audio encoding, sentence subtitles, animated ASS hook overlays, FFprobe validation, and the ZIP/report export. The test patches analysis/transcription with deterministic test data so it does not download Whisper models or call external AI services. It does not prove quality on arbitrary user recordings; test your own footage locally before publishing.
+
 ## Requirements
 - Python 3.10+
 - FFmpeg and FFprobe installed and available on PATH
