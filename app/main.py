@@ -506,6 +506,7 @@ def process_video(job_id: str, clip_count: int = 3, clip_length: int = 30):
 def render_batch_job(batch_id, job_id, short_count, long_count, short_length, long_length):
     """Background worker. Progress is updated after each real export attempt."""
     state = BATCH_JOBS[batch_id]
+    state["status"] = "running"
     try:
         matches = list(UPLOADS.glob(f"{job_id}.*"))
         if not matches:
