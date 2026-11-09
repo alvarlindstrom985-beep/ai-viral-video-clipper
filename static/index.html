@@ -55,7 +55,7 @@ button.addEventListener('click',async()=>{
     result.clips.forEach((clip,i)=>{
       const card=document.createElement('article');card.className='clip';
       const video=document.createElement('video');video.controls=true;video.playsInline=true;video.src=clip.url;
-      const label=document.createElement('p');label.textContent='Klipp '+(i+1)+' · start '+clip.start+' s';
+      const label=document.createElement('p');label.textContent='Klipp '+(i+1)+' · '+clip.start+'–'+(clip.end??(clip.start+clip.duration))+' s ('+(clip.duration??'')+' s)'+(clip.reaction_anchor!==null && clip.reaction_anchor!==undefined?' · reaktionssignal vid '+clip.reaction_anchor+' s':'');
       const score=document.createElement('p');score.className='score';score.textContent='Poäng: '+clip.score+' · Streamer: '+(clip.streamer_score||0)+' · Visuellt: '+(clip.visual_score||0)+' · GTA: '+(clip.game_score||0);
       const reason=document.createElement('p');reason.className='muted';reason.textContent=clip.reason;
       const links=document.createElement('div');links.className='links';
