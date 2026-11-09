@@ -61,7 +61,7 @@
     <p class="muted">Registrera statistik efter publicering. Appen jämför vilka klipptyper och redigeringsvarianter som fungerar bäst. Du hittar siffrorna i YouTube Studio → Analytics.</p>
     <form id="performanceForm" class="settings">
       <label class="field">Videotitel<input name="title" required maxlength="120" placeholder="Exempel: Streamern tappar det"></label>
-      <label class="field">Klippkategori<select name="category"><option>Rage/ilska</option><option>Stark reaktion</option><option>Humor/sk skratt</option><option>GTA-händelse</option><option>Annat</option></select></label>
+      <label class="field">Klippkategori<select name="category"><option>Rage/ilska</option><option>Stark reaktion</option><option>Humor/skratt</option><option>GTA-händelse</option><option>Annat</option></select></label>
       <label class="field">Format<select name="format"><option value="short">Short</option><option value="long">Längre video</option></select></label>
       <label class="field">Redigeringsvariant<select name="variant"><option value="v1">V1 – Clean</option><option value="v2">V2 – Flash</option><option value="v3">V3 – Color</option></select></label>
       <label class="field">Visningar<input name="views" type="number" min="0" step="1" required value="0"></label>
@@ -186,7 +186,7 @@ async function pollBatch(batchId){
         const ragePhrases=document.createElement('p');ragePhrases.className='muted';ragePhrases.textContent=(moment.rage_phrases||[]).length?'Uppfattade uttryck: '+moment.rage_phrases.join(', '):'Ingen tydlig rage-fras hittades';
         const reason=document.createElement('p');reason.className='muted';reason.textContent=moment.reason;
         const excerpt=document.createElement('p');excerpt.className='muted';excerpt.textContent=moment.transcript_excerpt||'Inget transkript tillgängligt.';
-        card.append(label,timing,score,rage,ragePhrases,reason,excerpt);highlightGrid.append(card);
+        card.append(label,timing,score,rage,learning,ragePhrases,reason,excerpt);highlightGrid.append(card);
       });
       resultsEl.insertBefore(highlightGrid,report);
       let summary='Klart! '+state.created.files+' filer skapade. Allt är redo för manuell publicering.';
