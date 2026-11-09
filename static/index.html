@@ -53,6 +53,9 @@
     <p id="status">Redo. FFmpeg krävs. Installera faster-whisper och OpenCV för bättre analys.</p>
     <progress id="progress" value="0" max="100" hidden></progress>
     <p id="progressText" class="muted"></p>
+    <h3>Senaste batchjobb</h3>
+    <p class="muted">Jobb sparas på servern. Om servern startas om kan avbrutna jobb startas om härifrån.</p>
+    <div id="batchHistory" class="clips"></div>
     <p><a id="zip" class="download" href="#">Ladda ner alla videor som ZIP</a></p>
     <div id="results"></div>
     <p class="notice">Inget publiceras automatiskt. Alla filer sparas som utkast. Kortare källmaterial kan ge färre klipp. Varianterna använder olika introeffekter och ljudbearbetning, inte olika musikspår.</p>
@@ -243,9 +246,55 @@ async function pollBatch(batchId){
       statusEl.textContent=summary;progress.value=100;progressText.textContent='Batchen är klar.';return;
     }
     if(state.status==='failed')throw new Error(state.error||'Batchen misslyckades');
+    if(state.status==='interrupted')throw new Error('Batchen avbröts av en serveromstart. Du kan starta om den under Senaste batchjobb.');
     await new Promise(resolve=>setTimeout(resolve,1500));
   }
 }
+async function loadBatchHistory(){
+  const container=document.querySelector('#batchHistory');
+  if(!container)return;
+  try{
+    const response=await fetch('/api/batch/recent');
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.detail||'Kunde inte läsa sparade batchjobb');
+    container.innerHTML='';
+    if(!data.jobs.length){
+      const empty=document.createElement('p');empty.className='muted';
+      empty.textContent='Inga tidigare batchjobb ännu.';container.append(empty);return;
+    }
+    data.jobs.forEach(job=>{
+      const card=document.createElement('article');card.className='clip';
+      const title=document.createElement('strong');title.textContent='Batch '+job.batch_id;
+      const status=document.createElement('p');status.className='pill';
+      status.textContent=(job.status||'okänd')+' · '+(job.stage||'');
+      const progressLine=document.createElement('p');progressLine.className='muted';
+      progressLine.textContent=(job.completed||0)+' av '+(job.total||0)+' exporter klara';
+      card.append(title,status,progressLine);
+      if(job.can_resume){
+        const resume=document.createElement('button');resume.type='button';resume.textContent='Starta om batchen';
+        resume.addEventListener('click',async()=>{
+          resume.disabled=true;statusEl.textContent='Köar om batchen...';
+          try{
+            const restarted=await fetch('/api/batch/resume/'+job.batch_id,{method:'POST'});
+            const result=await restarted.json();if(!restarted.ok)throw new Error(result.detail||'Kunde inte starta om batchen');
+            resultsEl.innerHTML='';zipLink.style.display='none';progress.hidden=false;
+            await loadBatchHistory();await pollBatch(job.batch_id);
+          }catch(error){statusEl.textContent=error.message}
+          finally{resume.disabled=false;await loadBatchHistory()}
+        });
+        card.append(resume);
+      }else if(job.status==='completed'){
+        const link=document.createElement('a');link.className='download';
+        link.href='/api/batch/download/'+job.batch_id;link.textContent='Ladda ner ZIP';
+        card.append(link);
+      }
+      container.append(card);
+    });
+  }catch(error){
+    container.textContent=error.message;
+  }
+}
+loadBatchHistory();
 button.addEventListener('click',async()=>{
   if(!fileInput.files.length){statusEl.textContent='Välj en videofil först.';return}
   button.disabled=true;resultsEl.innerHTML='';zipLink.style.display='none';progress.hidden=true;progressText.textContent='';
