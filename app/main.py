@@ -18,6 +18,7 @@ import unicodedata
 import io
 import os
 import time
+from datetime import datetime, timezone
 import urllib.parse
 import urllib.request
 
@@ -738,6 +739,50 @@ def find_reaction_anchors(duration: float, levels, transcript, visual_samples=No
     return merged
 
 
+def performance_age_cohort(age_hours):
+    """Return a comparable publication-age window, or None when age is unknown."""
+    if age_hours in (None, ""):
+        return None
+    try:
+        age = float(age_hours)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(age) or age < 0:
+        return None
+    if age <= 48:
+        return "0–48 timmar"
+    if age <= 168:
+        return "2–7 dagar"
+    if age <= 720:
+        return "7–30 dagar"
+    return "30+ dagar"
+
+
+def parse_publish_age_hours(value, now=None):
+    """Parse common Studio publish-date formats and estimate age at CSV import."""
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    parsed = None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%d %b %Y", "%b %d, %Y"):
+            try:
+                parsed = datetime.strptime(raw, fmt)
+                break
+            except ValueError:
+                continue
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    return round(max(0.0, (current - parsed).total_seconds() / 3600), 2)
+
+
 def learning_group_score(items, prior_mean, prior_strength=5.0):
     """Shrink small samples toward the format-wide average to reduce overfitting."""
     scores = [float(item.get("performance_score", 0) or 0) for item in items]
@@ -755,7 +800,7 @@ def learning_group_score(items, prior_mean, prior_strength=5.0):
 
 
 def learned_category_bonus(categories, media_format, performance_entries=None):
-    """Apply a small confidence-adjusted ranking bonus from cached channel results."""
+    """Compare category results inside similar publication-age cohorts."""
     category_map = {
         "Rage/ilska-signal": "Rage/ilska",
         "Streamerreaktion": "Stark reaktion",
@@ -765,27 +810,32 @@ def learned_category_bonus(categories, media_format, performance_entries=None):
         "Aktivt ögonblick": "Annat"
     }
     source_entries = read_performance_entries() if performance_entries is None else performance_entries
-    entries = [
-        item for item in source_entries
-        if item.get("format") == media_format and item.get("views", 0) > 0
-    ]
+    entries = [item for item in source_entries if item.get("format") == media_format and item.get("views", 0) > 0]
     if len(entries) < 3:
         return 0.0
-    overall = sum(float(item.get("performance_score", 0) or 0) for item in entries) / len(entries)
+    cohorts = {}
+    for item in entries:
+        cohort = performance_age_cohort(item.get("measurement_age_hours")) or "Okänd ålder"
+        cohorts.setdefault(cohort, []).append(item)
     possible = []
     for signal in categories:
         label = category_map.get(signal)
         if not label:
             continue
-        matching = [item for item in entries if item.get("category") == label]
-        if len(matching) < 3:
-            continue
-        estimate = learning_group_score(matching, overall)
-        # Shrink low-confidence groups toward the channel baseline; keep influence deliberately small.
-        delta = (estimate["adjusted_score"] - overall) * 0.12
-        possible.append(max(-3.0, min(3.0, delta)))
+        weighted_deltas = []
+        total_weight = 0
+        for cohort_items in cohorts.values():
+            matching = [item for item in cohort_items if item.get("category") == label]
+            if len(cohort_items) < 3 or len(matching) < 3:
+                continue
+            baseline = sum(float(item.get("performance_score", 0) or 0) for item in cohort_items) / len(cohort_items)
+            estimate = learning_group_score(matching, baseline)
+            delta = (estimate["adjusted_score"] - baseline) * 0.12
+            weighted_deltas.append((max(-3.0, min(3.0, delta)), len(matching)))
+            total_weight += len(matching)
+        if total_weight:
+            possible.append(sum(delta * weight for delta, weight in weighted_deltas) / total_weight)
     return round(max(possible, key=abs, default=0.0), 2)
-
 
 def score_opening_hook(start: float, levels, transcript, hook_seconds: float = 3.0):
     """Score only positive, observable signals in the first seconds of a candidate clip."""
@@ -1570,27 +1620,47 @@ def build_performance_summary(entries):
     summaries = []
     learning_recommendations = []
     for (key, label, media_format), items in groups.items():
-        estimate = learning_group_score(
-            items,
-            sum(float(item.get("performance_score", 0) or 0) for item in entries
-                if item.get("format", "short") == media_format)
-            / max(1, sum(1 for item in entries if item.get("format", "short") == media_format))
-        )
+        same_format = [item for item in entries if item.get("format", "short") == media_format]
+        baseline = sum(float(item.get("performance_score", 0) or 0) for item in same_format) / max(1, len(same_format))
+        estimate = learning_group_score(items, baseline)
         summaries.append({
             "dimension": key, "label": label, "format": media_format,
             "samples": len(items),
             "average_score": round(sum(item.get("performance_score", 0) for item in items) / len(items), 2),
-            "adjusted_score": estimate["adjusted_score"],
-            "confidence": estimate["confidence"],
+            "adjusted_score": estimate["adjusted_score"], "confidence": estimate["confidence"],
             "average_views": round(sum(item.get("views", 0) for item in items) / len(items), 1),
             "average_retention": round(sum(item.get("average_view_percentage", 0) for item in items if item.get("average_view_percentage") is not None) / max(1, sum(1 for item in items if item.get("average_view_percentage") is not None)), 2),
             "average_stayed": round(sum(item.get("stayed_to_watch_pct", 0) for item in items if item.get("stayed_to_watch_pct") is not None) / max(1, sum(1 for item in items if item.get("stayed_to_watch_pct") is not None)), 2)
         })
         if len(items) >= 3:
-            learning_recommendations.append({
-                "dimension": key, "label": label, "format": media_format,
-                **estimate
-            })
+            learning_recommendations.append({"dimension": key, "label": label, "format": media_format, **estimate})
+
+    age_groups = {}
+    for entry in entries:
+        cohort = performance_age_cohort(entry.get("measurement_age_hours"))
+        if cohort:
+            age_groups.setdefault((entry.get("format", "short"), cohort), []).append(entry)
+    age_cohorts = []
+    age_comparisons = []
+    for (media_format, cohort), items in age_groups.items():
+        age_cohorts.append({
+            "format": media_format, "cohort": cohort, "samples": len(items),
+            "average_score": round(sum(float(item.get("performance_score", 0) or 0) for item in items) / len(items), 2),
+            "average_views": round(sum(item.get("views", 0) for item in items) / len(items), 1),
+            "average_retention": round(sum(item.get("average_view_percentage", 0) for item in items if item.get("average_view_percentage") is not None) / max(1, sum(1 for item in items if item.get("average_view_percentage") is not None)), 2),
+            "average_stayed": round(sum(item.get("stayed_to_watch_pct", 0) for item in items if item.get("stayed_to_watch_pct") is not None) / max(1, sum(1 for item in items if item.get("stayed_to_watch_pct") is not None)), 2)
+        })
+        baseline = sum(float(item.get("performance_score", 0) or 0) for item in items) / len(items)
+        for dimension in ("category", "variant"):
+            for label in sorted({item.get(dimension, "okänd") for item in items}):
+                matching = [item for item in items if item.get(dimension, "okänd") == label]
+                if len(matching) >= 3:
+                    estimate = learning_group_score(matching, baseline)
+                    age_comparisons.append({
+                        "dimension": dimension, "label": label, "format": media_format,
+                        "age_cohort": cohort, **estimate
+                    })
+
     category_groups = [item for item in summaries if item["dimension"] == "category" and item["samples"] >= 3]
     variant_groups = [item for item in summaries if item["dimension"] == "variant" and item["samples"] >= 3]
     best_category = max(category_groups, key=lambda item: item["adjusted_score"], default=None)
@@ -1598,14 +1668,14 @@ def build_performance_summary(entries):
     return {
         "total_videos": len(entries),
         "summaries": sorted(summaries, key=lambda item: (item["dimension"], -item["adjusted_score"])),
-        "best_category": best_category,
-        "best_variant": best_variant,
+        "best_category": best_category, "best_variant": best_variant,
         "learning_recommendations": sorted(learning_recommendations, key=lambda item: item["adjusted_score"], reverse=True),
-        "minimum_samples_for_recommendation": 3,
-        "prior_strength": 5,
-        "note": "Justerad poäng dras mot kanalens genomsnitt när urvalet är litet. Det är en intern jämförelse, inte en prognos för viralitet. Jämför videor med liknande ålder och format."
+        "age_cohorts": sorted(age_cohorts, key=lambda item: (item["format"], item["cohort"])),
+        "age_comparisons": sorted(age_comparisons, key=lambda item: item["adjusted_score"], reverse=True),
+        "videos_with_age_data": sum(1 for item in entries if performance_age_cohort(item.get("measurement_age_hours"))),
+        "minimum_samples_for_recommendation": 3, "prior_strength": 5,
+        "note": "Justerad poäng dras mot formatets genomsnitt när urvalet är litet. Åldersjämförelser använder separata publiceringsfönster. Detta är intern statistik, inte en prognos för viralitet."
     }
-
 
 @app.get("/api/performance")
 def get_performance():
@@ -1634,7 +1704,8 @@ def add_performance(payload: dict):
         "likes": (0, 10**12, True),
         "comments": (0, 10**12, True),
         "shares": (0, 10**12, True),
-        "subscribers_gained": (0, 10**12, True)
+        "subscribers_gained": (0, 10**12, True),
+        "measurement_age_hours": (0, 87600, False)
     }
     cleaned = {}
     for key, (minimum, maximum, integer_only) in numeric_fields.items():
@@ -1685,7 +1756,9 @@ CSV_COLUMN_ALIASES = {
     "subscribers_gained": {"subscribersgained", "prenumeranter", "newsubscribers"},
     "category": {"category", "kategori", "klippkategori"},
     "format": {"format", "videoformat"},
-    "variant": {"variant", "redigeringsvariant"}
+    "variant": {"variant", "redigeringsvariant"},
+    "measurement_age_hours": {"measurementagehours", "agehours", "hours_since_publish", "hoursafterpublish"},
+    "published_at": {"videopublishtime", "publishedat", "publishdate", "publisheddate", "publiceringsdatum", "publiceringstid"}
 }
 
 
@@ -1784,7 +1857,8 @@ async def import_performance_csv(
         "likes": (0, 10**12, True, False),
         "comments": (0, 10**12, True, False),
         "shares": (0, 10**12, True, False),
-        "subscribers_gained": (0, 10**12, True, False)
+        "subscribers_gained": (0, 10**12, True, False),
+        "measurement_age_hours": (0, 87600, False, False)
     }
     for row_number, row in enumerate(reader, start=2):
         if not row or not any(str(cell).strip() for cell in row):
@@ -1824,6 +1898,8 @@ async def import_performance_csv(
         if fingerprint in existing_fingerprints:
             duplicates += 1
             continue
+        if cleaned.get("measurement_age_hours") is None:
+            cleaned["measurement_age_hours"] = parse_publish_age_hours(csv_row_value(row, column_map, "published_at"))
         entry = {
             "id": uuid.uuid4().hex[:12],
             "title": title,
