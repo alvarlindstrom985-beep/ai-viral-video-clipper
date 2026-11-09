@@ -49,7 +49,9 @@ class PublicationAgeLearningTests(unittest.TestCase):
         insights = build_performance_summary(entries)
         self.assertEqual(insights["videos_with_age_data"], 6)
         self.assertEqual(len(insights["age_cohorts"]), 1)
-        self.assertEqual(len(insights["age_comparisons"]), 2)
+        self.assertEqual(len(insights["age_comparisons"]), 3)
+        category_rows = [item for item in insights["age_comparisons"] if item["dimension"] == "category"]
+        self.assertEqual(len(category_rows), 2)
         self.assertEqual(insights["age_comparisons"][0]["age_cohort"], "0–48 timmar")
 
 
