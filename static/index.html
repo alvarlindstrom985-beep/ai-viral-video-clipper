@@ -47,10 +47,63 @@
     <p><a id="zip" class="download" href="#">Ladda ner alla videor som ZIP</a></p>
     <div id="results"></div>
     <p class="notice">Inget publiceras automatiskt. Alla filer sparas som utkast. Kortare källmaterial kan ge färre klipp. Varianterna använder olika introeffekter och ljudbearbetning, inte olika musikspår.</p>
+    <h2 class="group-title">Twitch – bevaka lives</h2>
+    <p class="muted">Skriv Twitch-kanaler med kommatecken. Modellen kontrollerar vilka som är live via Twitchs officiella API.</p>
+    <label class="field">Twitch-kanaler
+      <input id="twitchChannels" type="text" placeholder="exempel: xqc, kai_cenat, your_channel" style="width:100%;max-width:650px">
+    </label>
+    <button id="watchTwitch" type="button">Starta livebevakning</button>
+    <button id="stopTwitch" type="button" disabled>Stoppa bevakning</button>
+    <p id="twitchStatus" class="muted">Inte aktiv. Kräver Twitch API-uppgifter på servern.</p>
+    <div id="twitchResults" class="clips"></div>
+    <p class="notice">Bevakningen visar endast live-status och länkar. Den går inte in i chatten, spelar in eller laddar ner andras lives. Klippning kräver en inspelning/VOD som du äger eller har tillstånd att använda. Kontrollen körs medan den här sidan är öppen.</p>
   </section>
 </main>
 <script>
 const fileInput=document.querySelector('#video'), button=document.querySelector('#run');
+
+const twitchInput=document.querySelector('#twitchChannels');
+const watchButton=document.querySelector('#watchTwitch'), stopButton=document.querySelector('#stopTwitch');
+const twitchStatus=document.querySelector('#twitchStatus'), twitchResults=document.querySelector('#twitchResults');
+let twitchTimer=null;
+async function checkTwitch(){
+  const channels=twitchInput.value.trim();
+  if(!channels){twitchStatus.textContent='Skriv minst ett kanalnamn.';return}
+  twitchStatus.textContent='Kontrollerar Twitch...';
+  try{
+    const response=await fetch('/api/streamers/live?channels='+encodeURIComponent(channels));
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.detail||'Twitch-kontrollen misslyckades');
+    twitchResults.innerHTML='';
+    const live=data.channels.filter(channel=>channel.is_live);
+    data.channels.forEach(channel=>{
+      const card=document.createElement('article');card.className='clip';
+      const title=document.createElement('h3');title.textContent='@'+channel.login;
+      const state=document.createElement('p');state.className='pill';state.textContent=channel.is_live?'LIVE NU':'Offline';
+      card.append(title,state);
+      if(channel.is_live){
+        const streamTitle=document.createElement('p');streamTitle.textContent=channel.title||'Live-sändning';
+        const game=document.createElement('p');game.className='muted';game.textContent=channel.game_name||'Okänt spel';
+        const viewers=document.createElement('p');viewers.className='muted';viewers.textContent=Number(channel.viewer_count).toLocaleString('sv-SE')+' tittare';
+        const link=document.createElement('a');link.href=channel.url;link.target='_blank';link.rel='noopener noreferrer';link.className='download';link.textContent='Öppna live';
+        card.append(streamTitle,game,viewers,link);
+      }
+      twitchResults.append(card);
+    });
+    twitchStatus.textContent=live.length+' av '+data.channels.length+' kanaler är live. Uppdaterad '+new Date(data.checked_at*1000).toLocaleTimeString('sv-SE')+'.';
+  }catch(error){twitchStatus.textContent=error.message}
+}
+watchButton.addEventListener('click',async()=>{
+  if(twitchTimer)clearInterval(twitchTimer);
+  await checkTwitch();
+  twitchTimer=setInterval(checkTwitch,60000);
+  watchButton.disabled=true;stopButton.disabled=false;
+});
+stopButton.addEventListener('click',()=>{
+  if(twitchTimer)clearInterval(twitchTimer);
+  twitchTimer=null;watchButton.disabled=false;stopButton.disabled=true;
+  twitchStatus.textContent='Livebevakningen är stoppad.';
+});
 const statusEl=document.querySelector('#status'), resultsEl=document.querySelector('#results');
 const progress=document.querySelector('#progress'), progressText=document.querySelector('#progressText'), zipLink=document.querySelector('#zip');
 function addSection(title,items){
