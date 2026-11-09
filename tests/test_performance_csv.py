@@ -1,6 +1,6 @@
 import unittest
 
-from app.main import normalize_csv_header, parse_csv_metric, candidate_similarity, is_near_duplicate, retention_signal_score
+from app.main import normalize_csv_header, parse_csv_metric, candidate_similarity, is_near_duplicate, retention_signal_score, normalize_ai_review
 
 
 class YouTubeCsvMetricTests(unittest.TestCase):
@@ -42,6 +42,25 @@ class ClipSimilarityTests(unittest.TestCase):
         result = candidate_similarity(a, b)
         self.assertGreater(result["text_similarity"], 0.9)
         self.assertGreater(result["overlap_ratio"], 0.8)
+
+
+class AIReviewNormalizationTests(unittest.TestCase):
+    def test_review_scores_are_clamped_and_lists_limited(self):
+        result = normalize_ai_review({
+            "score": 140, "hook_score": -5, "clarity_score": 72.6,
+            "verdict": "Bra men kontrollera slutet",
+            "strengths": ["Tydlig start", "Bra tempo", "Stark payoff", "Extra"],
+            "weaknesses": ["Svag ljudnivå"]
+        })
+        self.assertEqual(result["score"], 100)
+        self.assertEqual(result["hook_score"], 0)
+        self.assertEqual(result["clarity_score"], 73)
+        self.assertEqual(len(result["strengths"]), 3)
+        self.assertEqual(result["status"], "completed")
+
+    def test_invalid_review_payload_is_rejected(self):
+        with self.assertRaises(ValueError):
+            normalize_ai_review("not-json")
 
 
 class RetentionSignalTests(unittest.TestCase):
