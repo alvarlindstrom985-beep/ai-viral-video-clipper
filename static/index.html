@@ -342,7 +342,7 @@ function renderPerformance(data){
     ageCard.append(ageHeading,ageNote);
     (insights.age_cohorts||[]).forEach(item=>{
       const line=document.createElement('p');line.className='muted';
-      line.textContent=(item.format==='short'?'Shorts':'Längre video')+' · '+item.cohort+' · '+item.samples+' videor · '+item.average_score+'/100 · '+Math.round(item.average_views).toLocaleString('sv-SE')+' visningar';
+      line.textContent=(item.format==='short'?'Shorts':'Längre video')+' · '+item.cohort+' · '+item.samples+' videor · '+item.average_score+'/100 · '+Math.round(item.average_views).toLocaleString('sv-SE')+' visningar · visat '+item.average_retention+' % · Stayed to watch '+item.average_stayed+' % · snittid '+item.average_view_duration_sec+' s';
       ageCard.append(line);
     });
     (insights.age_comparisons||[]).slice(0,6).forEach(item=>{
