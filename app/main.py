@@ -1908,7 +1908,9 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     results.append({
                         "name": filename, "url": f"/api/clips/{filename}",
                         "type": media_type, "clip_number": clip_index,
-                        "variant": recipe["id"], "variant_label": recipe["label"],\n                        "learned_variant_recommended": bool(candidate.get("learned_variant_hint") and candidate["learned_variant_hint"]["recommended_variant"] == recipe["id"]),\n                        "learned_variant_hint": candidate.get("learned_variant_hint"),
+                        "variant": recipe["id"], "variant_label": recipe["label"],
+                        "learned_variant_recommended": bool(candidate.get("learned_variant_hint") and candidate["learned_variant_hint"]["recommended_variant"] == recipe["id"]),
+                        "learned_variant_hint": candidate.get("learned_variant_hint"),
                         "start": round(candidate["start"], 1),
                         "end": round(candidate["start"] + clip_duration, 1),
                         "duration": round(clip_duration, 1),
