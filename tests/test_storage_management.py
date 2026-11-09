@@ -63,6 +63,28 @@ class StorageManagementTests(unittest.TestCase):
                 self.assertTrue(old_file.exists())
                 self.assertEqual(len(result["candidates"]), 1)
 
+    def test_stale_interrupted_job_no_longer_blocks_cleanup(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            uploads = root / "uploads"
+            outputs = root / "outputs"
+            uploads.mkdir()
+            outputs.mkdir()
+            old_file = outputs / ("f" * 12 + "_render.mp4")
+            old_file.write_bytes(b"old")
+            old_time = time.time() - 45 * 86400
+            os.utime(old_file, (old_time, old_time))
+            stale_state = {
+                "batch_id": "f" * 12, "job_id": "1" * 12,
+                "status": "interrupted",
+                "updated_at": main.datetime.fromtimestamp(old_time, main.timezone.utc).isoformat()
+            }
+            with patch.object(main, "UPLOADS", uploads), \\
+                 patch.object(main, "OUTPUTS", outputs), \\
+                 patch.object(main, "BATCH_JOBS", {"f" * 12: stale_state}):
+                candidates = main.storage_cleanup_candidates()
+                self.assertIn(old_file, [item["path"] for item in candidates])
+
     def test_disk_guard_rejects_upload_when_reserve_would_be_breached(self):
         usage = type("Usage", (), {"free": main.MIN_FREE_DISK_BYTES + 10})()
         with patch.object(main.shutil, "disk_usage", return_value=usage):
