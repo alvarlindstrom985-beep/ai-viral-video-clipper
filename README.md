@@ -7,6 +7,7 @@ A local-first app that ranks moments in uploaded videos and renders vertical cli
 - Analyze audio activity to find candidate moments
 - Optionally transcribe speech with Faster-Whisper and prioritize streamer humor, laughter cues, spontaneous reactions, and funny comments; GTA event terms are secondary signals
 - Optionally analyze sampled video frames with OpenCV to detect faces, possible smiles, and movement as weak visual reaction cues
+- Build candidate clip windows around approximate reaction timestamps from laughter/funny speech, sudden audio peaks, and weak visual smile cues, alongside the regular timeline scan
 - Generate downloadable, time-synced SRT subtitle files for each clip when transcription is available
 - Render 9:16 clips in 1080 × 1920 with FFmpeg
 - Choose 1–8 clips and a duration of 15–60 seconds
