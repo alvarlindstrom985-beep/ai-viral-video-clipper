@@ -46,9 +46,9 @@ The visual pass samples frames and uses basic face/smile detectors. It is only a
 ## Daily batch exports (manual publishing)
 
 The batch endpoint creates up to 25 unique Shorts and 5 unique longer videos from one uploaded source. Each selected moment is exported in three edit variants, for up to 90 files total:
-- Variant 1: clean fade-in and original audio
-- Variant 2: brief brightness/contrast intro effect and loudness-normalized audio
-- Variant 3: brief color intro effect and compressed/boosted audio
+- Variant 1: direct-quote hook overlay, clean fade-in, original audio
+- Variant 2: reaction-led hook overlay, brief brightness/contrast intro effect, loudness-normalized audio
+- Variant 3: curiosity hook overlay, brief color intro effect, compressed/boosted audio
 
 Shorts are rendered vertically at 1080 × 1920. Longer videos are rendered in 16:9 at 1920 × 1080. The default UI settings use 30-second Shorts and 3-minute longer videos. You can adjust the counts and durations in the dashboard.
 
@@ -126,6 +126,18 @@ The app uses the OpenAI Responses API with image inputs. Without `OPENAI_API_KEY
 **Privacy:** when enabled, up to three extracted frames and the available transcript excerpt from each reviewed clip are sent to OpenAI for analysis. Configure the key only on the server, never in frontend JavaScript or a public repository. Only process recordings you own or have permission to use. Review OpenAI's current data-use and retention terms before sending footage.
 
 **Limitations:** the reviewer sees still images rather than the full moving video and does not directly listen to the audio. It can miss fast action, timing, sarcasm, context, and important events between sampled frames. Its scores and suggestions need human review.
+
+
+## Animated hook overlays
+
+Each selected highlight now has up to three transcript-grounded hook options, and the three rendered edit variants use one option each:
+- V1 uses a direct quote from the clip.
+- V2 uses the most expressive detected reaction line.
+- V3 uses a curiosity-led prompt based on the transcript.
+
+When a usable transcript exists, the chosen text is burned into the opening 2.8 seconds of the corresponding video as an animated ASS overlay, with a short fade and subtle scale-up. The hook is positioned near the top so it is visually separate from the regular bottom captions. The three variants retain their distinct visual/audio treatments. If transcription is unavailable or an option cannot be generated, that variant is rendered without hook text rather than inventing dialogue.
+
+Hook text is generated from speech recognition and can contain transcription errors. Review every hook and the finished video before publishing. The hook overlays are drafts only: nothing is uploaded or published automatically. Use only footage you own or have permission to edit.
 
 
 ## Manual edit-point assistant
