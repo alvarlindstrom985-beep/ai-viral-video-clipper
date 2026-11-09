@@ -1,6 +1,6 @@
 import unittest
 
-from app.main import normalize_csv_header, parse_csv_metric, candidate_similarity, is_near_duplicate
+from app.main import normalize_csv_header, parse_csv_metric, candidate_similarity, is_near_duplicate, retention_signal_score
 
 
 class YouTubeCsvMetricTests(unittest.TestCase):
@@ -42,6 +42,22 @@ class ClipSimilarityTests(unittest.TestCase):
         result = candidate_similarity(a, b)
         self.assertGreater(result["text_similarity"], 0.9)
         self.assertGreater(result["overlap_ratio"], 0.8)
+
+
+class RetentionSignalTests(unittest.TestCase):
+    def test_strong_clip_structure_scores_higher(self):
+        strong = retention_signal_score(10, 4, 5, 2, 1.0)
+        weak = retention_signal_score(1, 1, 1, 0, 0.1)
+        self.assertGreater(strong["score"], weak["score"])
+        self.assertEqual(strong["label"], "Starka signaler")
+
+    def test_score_is_bounded(self):
+        result = retention_signal_score(100, 99, 99, 99, 99)
+        self.assertEqual(result["score"], 100)
+
+    def test_quiet_opening_is_not_claimed_as_failure(self):
+        result = retention_signal_score(0, 3, 2, 2, 0.7)
+        self.assertIn("öppningen kan behöva snabbare kontext eller en tydligare krok", result["reasons"])
 
 
 class RenderQualityTests(unittest.TestCase):
