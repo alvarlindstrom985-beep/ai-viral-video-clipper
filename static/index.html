@@ -317,6 +317,22 @@ function renderPerformance(data){
     best.textContent='Bästa variant hittills: '+insights.best_variant.label+' ('+insights.best_variant.average_score+'/100, '+insights.best_variant.samples+' klipp)';
     performanceInsights.append(best);
   }
+  if(insights.learning_recommendations&&insights.learning_recommendations.length){
+    const learning=document.createElement('article');learning.className='clip';
+    const heading=document.createElement('h3');heading.textContent='Självlärande rankning';
+    const note=document.createElement('p');note.className='muted';note.textContent='Justerade jämförelser väger in antal exempel och dras mot kanalens genomsnitt när underlaget är litet.';
+    learning.append(heading,note);
+    insights.learning_recommendations.slice(0,4).forEach(item=>{
+      const line=document.createElement('p');line.className='score';
+      line.textContent=(item.dimension==='category'?'Kategori: ':'Variant: ')+item.label+' · '+item.adjusted_score+'/100 · '+item.samples+' klipp · säkerhet '+Math.round(item.confidence*100)+' %';
+      learning.append(line);
+    });
+    performanceInsights.append(learning);
+  }else{
+    const learning=document.createElement('p');learning.className='muted';
+    learning.textContent='Självlärningen väntar på minst 3 videor i samma kategori eller variant. Lägg in YouTube-statistik för att börja kalibrera rankningen.';
+    performanceInsights.append(learning);
+  }
   if(!insights.best_category&&!insights.best_variant){
     const note=document.createElement('p');note.className='muted';
     note.textContent='Samla minst 3 registrerade klipp i en kategori eller variant för att få en första jämförelse.';
@@ -325,7 +341,7 @@ function renderPerformance(data){
   (insights.summaries||[]).forEach(item=>{
     const card=document.createElement('article');card.className='clip';
     const heading=document.createElement('strong');heading.textContent=(item.dimension==='category'?'Kategori: ':'Variant: ')+item.label+' · '+(item.format==='short'?'Shorts':'Längre video');
-    const score=document.createElement('p');score.className='score';score.textContent='Jämförelsepoäng: '+item.average_score+'/100';
+    const score=document.createElement('p');score.className='score';score.textContent='Jämförelsepoäng: '+(item.adjusted_score??item.average_score)+'/100';
     const details=document.createElement('p');details.className='muted';details.textContent=item.samples+' klipp · snitt '+Math.round(item.average_views).toLocaleString('sv-SE')+' visningar';
     const retention=document.createElement('p');retention.className='muted';retention.textContent='Genomsnittligt visat: '+item.average_retention+' % · Stayed to watch: '+item.average_stayed+' %';
     card.append(heading,score,details,retention);performanceInsights.append(card);
