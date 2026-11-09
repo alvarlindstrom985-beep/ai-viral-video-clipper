@@ -2218,6 +2218,79 @@ def recommend_edit_variants(entries):
     return sorted(recommendations, key=lambda item: (item["confidence"], item["margin"], item["score"]), reverse=True)
 
 
+
+def generate_edit_recommendations(entries, minimum_samples=3):
+    """Compare variants on individual YouTube metrics within matching groups."""
+    metric_specs = [
+        ("stayed_to_watch_pct", "Valde att titta", "Öppning och hook", 2.0, "Högre andel valde att titta på den här varianten. Granska dess första sekunder och hook."),
+        ("average_view_percentage", "Genomsnittligt visat", "Retention och tempo", 3.0, "Den här varianten hade högre genomsnittlig visningsprocent. Granska klipprytm och hur snabbt payoffen kommer."),
+        ("average_view_duration_sec", "Genomsnittlig visningstid", "Tittartid", 0.5, "Den här varianten gav längre genomsnittlig visningstid. Jämför berättelseflöde och payoff innan du ändrar längden."),
+        ("click_through_rate_pct", "Klickfrekvens", "Titel och miniatyrbild", 0.5, "Klickfrekvensen var högre för den här gruppen. Det pekar främst på titel/miniatyrbild, inte på klippredigeringen."),
+        ("shares_per_1000", "Delningar per 1 000 visningar", "Delningsvärde", 0.5, "Den här varianten delades oftare. Granska vilken händelse eller payoff som gör klippet värt att dela.")
+    ]
+    grouped = {}
+    for entry in entries:
+        variant = str(entry.get("variant", "")).strip().lower()
+        if variant not in PERFORMANCE_VARIANTS:
+            continue
+        key = (
+            entry.get("format", "short"),
+            entry.get("category", "Annat"),
+            performance_age_cohort(entry.get("measurement_age_hours")) or "Okänd ålder"
+        )
+        grouped.setdefault(key, {}).setdefault(variant, []).append(entry)
+
+    recommendations = []
+    for (media_format, category, cohort), variants in grouped.items():
+        for metric_key, metric_label, focus, threshold, message in metric_specs:
+            if metric_key == "stayed_to_watch_pct" and media_format != "short":
+                continue
+            if metric_key == "click_through_rate_pct" and media_format != "long":
+                continue
+            values = {}
+            samples = {}
+            for variant in ("v1", "v2", "v3"):
+                valid = []
+                for item in variants.get(variant, []):
+                    value = item.get(metric_key)
+                    if value is None and metric_key == "shares_per_1000":
+                        views = float(item.get("views", 0) or 0)
+                        shares = item.get("shares")
+                        if views > 0 and shares is not None:
+                            value = float(shares) / views * 1000
+                    if value is not None:
+                        try:
+                            number = float(value)
+                        except (TypeError, ValueError):
+                            continue
+                        if math.isfinite(number):
+                            valid.append(number)
+                samples[variant] = len(valid)
+                values[variant] = round(sum(valid) / len(valid), 2) if valid else None
+            if any(samples[name] < minimum_samples for name in ("v1", "v2", "v3")):
+                continue
+            ordered = sorted(values.items(), key=lambda pair: pair[1], reverse=True)
+            winner, best_value = ordered[0]
+            runner_up_value = ordered[1][1]
+            margin = round(best_value - runner_up_value, 2)
+            if margin < threshold:
+                continue
+            recommendations.append({
+                "format": media_format,
+                "category": category,
+                "age_cohort": cohort,
+                "metric": metric_key,
+                "metric_label": metric_label,
+                "focus": focus,
+                "recommended_variant": winner,
+                "message": message,
+                "margin": margin,
+                "variant_values": values,
+                "samples_per_variant": samples,
+                "minimum_samples": minimum_samples
+            })
+    return sorted(recommendations, key=lambda item: (item["margin"], min(item["samples_per_variant"].values())), reverse=True)[:20]
+
 def build_performance_summary(entries):
     groups = {}
     for entry in entries:
@@ -2284,6 +2357,7 @@ def build_performance_summary(entries):
         "age_cohorts": sorted(age_cohorts, key=lambda item: (item["format"], item["cohort"])),
         "age_comparisons": sorted(age_comparisons, key=lambda item: item["adjusted_score"], reverse=True),
         "variant_recommendations": recommend_edit_variants(entries),
+        "edit_recommendations": generate_edit_recommendations(entries),
         "videos_with_age_data": sum(1 for item in entries if performance_age_cohort(item.get("measurement_age_hours"))),
         "minimum_samples_for_recommendation": 3, "prior_strength": 5,
         "note": "Justerad poäng dras mot formatets genomsnitt när urvalet är litet. Åldersjämförelser använder separata publiceringsfönster. Detta är intern statistik, inte en prognos för viralitet."
