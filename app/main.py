@@ -470,7 +470,33 @@ def find_reaction_anchors(duration: float, levels, transcript, visual_samples=No
     return merged
 
 
-def score_windows(duration: float, clip_len: float, levels, transcript, clip_count: int, visual_samples=None, allow_overlap=True):
+def learned_category_bonus(categories, media_format):
+    """Apply a small, cautious ranking adjustment from previously recorded channel results."""
+    category_map = {
+        "Rage/ilska-signal": "Rage/ilska",
+        "Streamerreaktion": "Stark reaktion",
+        "Streamerhumor": "Humor/skratt",
+        "Visuell möjlig skrattreaktion": "Humor/skratt",
+        "GTA-händelse": "GTA-händelse",
+        "Aktivt ögonblick": "Annat"
+    }
+    entries = [item for item in read_performance_entries() if item.get("format") == media_format]
+    if len(entries) < 3:
+        return 0.0
+    overall = sum(item.get("performance_score", 0) for item in entries) / len(entries)
+    possible = []
+    for signal in categories:
+        label = category_map.get(signal)
+        if not label:
+            continue
+        matching = [item for item in entries if item.get("category") == label]
+        if len(matching) >= 3:
+            average = sum(item.get("performance_score", 0) for item in matching) / len(matching)
+            possible.append(max(-5.0, min(5.0, (average - overall) * 0.15)))
+    return round(max(possible, default=0.0), 2)
+
+
+def score_windows(duration: float, clip_len: float, levels, transcript, clip_count: int, visual_samples=None, allow_overlap=True, media_format='short'):
     latest_start = max(0.0, duration - clip_len)
     step = max(3.0, min(8.0, clip_len / 5))
     starts = []
@@ -534,6 +560,9 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
         if not categories and (speech_density > 0.35 or audio_score > 0.025):
             categories.append("Aktivt ögonblick")
 
+        learning_bonus = learned_category_bonus(categories, media_format)
+        score += learning_bonus
+
         matched_phrases = list(dict.fromkeys(funny_hits + reaction_hits + rage_hits + game_hits))
         reason_parts = []
         if funny_hits or laughter_hits:
@@ -549,6 +578,7 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
 
         scored.append({
             "start": start, "end": end, "score": score,
+            "learning_bonus": learning_bonus,
             "reason": " · ".join(reason_parts),
             "audio_activity": round(audio_score, 3),
             "matched_phrases": matched_phrases,
@@ -724,7 +754,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
             actual_long_length = min(float(long_length), duration)
             long_candidates = score_windows(
                 duration, actual_long_length, levels, transcript, long_count,
-                visual_samples, allow_overlap=False
+                visual_samples, allow_overlap=False, media_format="long"
             )
 
         # Save an editable timestamp index for every selected highlight.
@@ -748,6 +778,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     "categories": candidate["categories"],
                     "matched_phrases": candidate["matched_phrases"],
                     "rage_score": candidate["rage_score"],
+                    "learning_bonus": candidate["learning_bonus"],
                     "rage_phrases": candidate["rage_phrases"],
                     "transcript_excerpt": " ".join(nearby_text)[:1200]
                 })
@@ -841,7 +872,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
         with report_csv.open("w", newline="", encoding="utf-8-sig") as handle:
             writer = csv.DictWriter(handle, fieldnames=[
                 "type", "number", "start_seconds", "end_seconds", "score",
-                "reason", "categories", "matched_phrases", "rage_score", "rage_phrases", "transcript_excerpt"
+                "reason", "categories", "matched_phrases", "rage_score", "learning_bonus", "rage_phrases", "transcript_excerpt"
             ])
             writer.writeheader()
             for item in highlights:
