@@ -259,8 +259,9 @@ def init_batch_database():
 def save_batch_job(batch_id, state):
     """Persist a JSON-safe snapshot of a batch job."""
     init_batch_database()
-    snapshot = json.dumps(state, ensure_ascii=False, default=str)
     updated_at = datetime.now(timezone.utc).isoformat()
+    state["updated_at"] = updated_at
+    snapshot = json.dumps(state, ensure_ascii=False, default=str)
     with _BATCH_DB_LOCK, sqlite3.connect(str(BATCH_DB_FILE), timeout=30) as connection:
         connection.execute(
             """INSERT INTO batch_jobs(batch_id, state_json, updated_at)
@@ -270,7 +271,6 @@ def save_batch_job(batch_id, state):
             (batch_id, snapshot, updated_at)
         )
         connection.commit()
-    state["updated_at"] = updated_at
 
 
 def restore_batch_jobs():
