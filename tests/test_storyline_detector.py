@@ -6,7 +6,7 @@ from app.main import storyline_arc_quality
 class StorylineArcQualityTests(unittest.TestCase):
     def test_finds_setup_event_and_aftermath(self):
         transcript = [
-            {"start": 2, "end": 4, "text": "I am going to try this"},
+            {"start": 4, "end": 6, "text": "I am going to try this"},
             {"start": 10, "end": 12, "text": "No way!"},
             {"start": 14, "end": 16, "text": "That was incredible"},
         ]
