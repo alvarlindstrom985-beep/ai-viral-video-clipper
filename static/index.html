@@ -133,6 +133,28 @@ async function pollBatch(batchId){
       addSection('Shorts – '+state.created.shorts+' grundklipp / '+(state.created.shorts*3)+' versioner',state.videos.filter(v=>v.type==='short'));
       addSection('Längre videor – '+state.created.long_videos+' grundklipp / '+(state.created.long_videos*3)+' versioner',state.videos.filter(v=>v.type==='long'));
       zipLink.href=state.zip_url;zipLink.style.display='inline';
+      const report=document.createElement('p');
+      const reportLink=document.createElement('a');
+      reportLink.className='download';reportLink.href=state.report_url;
+      reportLink.textContent='Ladda ner highlight-rapport (JSON)';
+      report.append(reportLink);resultsEl.prepend(report);
+      const highlights=state.highlights||[];
+      const highlightHeading=document.createElement('h2');highlightHeading.className='group-title';
+      highlightHeading.textContent='Automatiskt hittade höjdpunkter ('+highlights.length+')';
+      resultsEl.prepend(highlightHeading);
+      const highlightGrid=document.createElement('div');highlightGrid.className='clips';
+      highlights.forEach(moment=>{
+        const card=document.createElement('article');card.className='clip';
+        const label=document.createElement('strong');
+        label.textContent=(moment.type==='short'?'Short':'Längre video')+' #'+moment.number;
+        const timing=document.createElement('p');
+        timing.textContent=moment.start_seconds+'s – '+moment.end_seconds+'s';
+        const score=document.createElement('p');score.className='score';score.textContent='Urvalspoäng: '+moment.score;
+        const reason=document.createElement('p');reason.className='muted';reason.textContent=moment.reason;
+        const excerpt=document.createElement('p');excerpt.className='muted';excerpt.textContent=moment.transcript_excerpt||'Inget transkript tillgängligt.';
+        card.append(label,timing,score,reason,excerpt);highlightGrid.append(card);
+      });
+      resultsEl.insertBefore(highlightGrid,report);
       let summary='Klart! '+state.created.files+' filer skapade. Allt är redo för manuell publicering.';
       if(state.failed_files.length)summary+=' Misslyckade exporter: '+state.failed_files.length+'.';
       statusEl.textContent=summary;progress.value=100;progressText.textContent='Batchen är klar.';return;
