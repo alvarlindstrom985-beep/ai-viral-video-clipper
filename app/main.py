@@ -1284,6 +1284,47 @@ def learned_variant_hint(categories, media_format, performance_entries=None, rec
         "note": "Historisk rekommendation – alla tre versioner skapas fortfarande."
     }
 
+def clip_boundary_quality(start: float, end: float, transcript, anchors=None):
+    """Estimate whether clip cuts through speech and leaves room before a reaction."""
+    timed_items = []
+    for segment in transcript or []:
+        words = segment.get("words") if isinstance(segment, dict) else None
+        if words:
+            timed_items.extend(
+                {"start": float(word["start"]), "end": float(word["end"])}
+                for word in words if "start" in word and "end" in word
+            )
+        elif isinstance(segment, dict) and "start" in segment and "end" in segment:
+            timed_items.append({"start": float(segment["start"]), "end": float(segment["end"])})
+    cut_start = any(item["start"] < start < item["end"] for item in timed_items)
+    cut_end = any(item["start"] < end < item["end"] for item in timed_items)
+    score = 0
+    reasons = []
+    if cut_start:
+        score -= 7
+        reasons.append("risk att tal kapas i början")
+    if cut_end:
+        score -= 7
+        reasons.append("risk att tal kapas i slutet")
+    inside_anchors = [
+        float(item["time"]) for item in (anchors or [])
+        if start <= float(item.get("time", -1)) <= end
+    ]
+    if inside_anchors:
+        lead_in = min(inside_anchors) - start
+        if lead_in < 0.8:
+            score -= 5
+            reasons.append("reaktionen börjar nära klippets start")
+        elif 1.0 <= lead_in <= min(6.0, (end - start) * 0.4):
+            score += 4
+            reasons.append("upptakt före reaktionen")
+    return {
+        "score": score,
+        "reasons": reasons,
+        "speech_cut_at_start": cut_start,
+        "speech_cut_at_end": cut_end
+    }
+
 def score_windows(duration: float, clip_len: float, levels, transcript, clip_count: int, visual_samples=None, allow_overlap=True, media_format='short'):
     latest_start = max(0.0, duration - clip_len)
     step = max(3.0, min(8.0, clip_len / 5))
@@ -1353,6 +1394,8 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
 
         hook = score_opening_hook(start, levels, transcript)
         hook_bonus = hook["score"]
+        boundary = clip_boundary_quality(start, end, transcript, anchors)
+        boundary_score = boundary["score"]
         learning_bonus = learned_category_bonus(categories, media_format, learning_entries)
         variant_hint = learned_variant_hint(categories, media_format, learning_entries, variant_recommendations)
 
@@ -1400,7 +1443,7 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
             hook_bonus, sum(bucket_activity), signal_families,
             payoff_score, speech_density
         )
-        score += learning_bonus + hook_bonus + pacing_score + diversity_score + payoff_score
+        score += learning_bonus + hook_bonus + pacing_score + diversity_score + payoff_score + boundary_score
 
         matched_phrases = list(dict.fromkeys(funny_hits + reaction_hits + rage_hits + game_hits))
         reason_parts = []
@@ -1426,12 +1469,16 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
             "signal_diversity_score": diversity_score,
             "signal_families": signal_families,
             "payoff_score": payoff_score,
+            "boundary_quality_score": boundary_score,
+            "boundary_quality_reasons": boundary["reasons"],
+            "speech_cut_at_start": boundary["speech_cut_at_start"],
+            "speech_cut_at_end": boundary["speech_cut_at_end"],
             "retention_score": retention["score"],
             "retention_label": retention["label"],
             "retention_reasons": retention["reasons"],
             "retention_components": retention["components"],
             "viral_ranking_score": round(score, 2),
-            "reason": " · ".join(reason_parts + (["stark öppning"] if hook_bonus >= 4 else []) + (["aktivt genom klippet"] if pacing_score >= 4.5 else []) + (["tydlig payoff mot slutet"] if payoff_score else [])),
+            "reason": " · ".join(reason_parts + (["stark öppning"] if hook_bonus >= 4 else []) + (["aktivt genom klippet"] if pacing_score >= 4.5 else []) + (["tydlig payoff mot slutet"] if payoff_score else []) + boundary["reasons"]),
             "audio_activity": round(audio_score, 3),
             "matched_phrases": matched_phrases,
             "categories": categories,
