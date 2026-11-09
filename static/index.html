@@ -180,6 +180,8 @@ function addSection(title,items){
     const video=document.createElement('video');video.controls=true;video.playsInline=true;video.preload='none';video.src=item.url;
     const label=document.createElement('p');label.textContent='Klipp '+item.clip_number+' · '+item.start+'–'+item.end+' s';
     const variant=document.createElement('p');variant.className='pill';variant.textContent=item.variant.toUpperCase()+' · '+item.variant_label+(item.hook_overlay?' · animerad hooktext i videon':' · hooktext saknas');
+    if(item.learned_variant_recommended){const learned=document.createElement('p');learned.className='pill';learned.textContent='Historiskt rekommenderad variant för kategorin';card.append(learned);}
+
     const score=document.createElement('p');score.className='score';score.textContent='Urvalspoäng: '+item.score;
     const quality=document.createElement('p');quality.className='pill';quality.textContent=item.quality_passed?'Teknisk kvalitetskontroll godkänd':'Kvalitetskontroll ej godkänd';
     const warnings=document.createElement('p');warnings.className='muted';warnings.textContent=(item.quality_warnings||[]).join(' · ')||'Inga automatiska varningar.';
