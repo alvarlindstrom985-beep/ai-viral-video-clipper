@@ -133,3 +133,10 @@ The app uses the OpenAI Responses API with image inputs. Without `OPENAI_API_KEY
 Each selected highlight now includes conservative trim suggestions based on detected speech timestamps. If there is a clearly long silent lead-in or tail, the report proposes new start/end timestamps and explains the estimated time saved. It preserves a short lead-in before the first detected words and a short pause after the final words. If transcript timing is unavailable or a trim would make the clip too short, it recommends keeping the original timestamps.
 
 These are manual suggestions only: the renderer does not apply them, overwrite the source, or change the selected clips. Check suggested cut points in an editor before using them. Transcript timestamps can be imperfect, and the helper cannot understand visual context, music, sound effects, or whether a pause is intentionally funny.
+
+
+## Three-option hook generator
+
+Every selected highlight now receives up to three alternative opening text hooks: a direct quote, a reaction-led option, and a curiosity-led option. They are composed from words found in the clip transcript, not invented descriptions of unseen events. If no usable transcript is available, the app returns no hook options rather than fabricating a quote. The dashboard displays the alternatives for manual comparison.
+
+These are text suggestions only: they are not automatically burned into the video or published. Add the chosen line in your editor and check that it accurately represents the footage. The generator uses local templates and transcript cues; it does not make an extra paid AI request and does not predict which hook will perform best.
