@@ -1611,6 +1611,28 @@ def performance_score(entry):
     return round(sum(w * min(100.0, max(0.0, value)) for w, value in values) / weight, 2) if weight else 0.0
 
 
+def performance_viewer_behavior(items):
+    """Return per-video viewer actions normalized to rates per 1,000 views."""
+    metrics = {
+        "engaged_views": "engaged_views_pct",
+        "likes": "likes_per_1000_views",
+        "comments": "comments_per_1000_views",
+        "shares": "shares_per_1000_views",
+        "subscribers_gained": "subscribers_gained_per_1000_views"
+    }
+    result = {}
+    for source_key, output_key in metrics.items():
+        rates = []
+        for item in items:
+            views = float(item.get("views", 0) or 0)
+            value = item.get(source_key)
+            if views > 0 and value is not None:
+                rates.append(float(value) / views * 1000.0)
+        result[output_key] = round(sum(rates) / len(rates), 2) if rates else None
+        result[output_key + "_samples"] = len(rates)
+    return result
+
+
 def build_performance_summary(entries):
     groups = {}
     for entry in entries:
@@ -1630,7 +1652,8 @@ def build_performance_summary(entries):
             "adjusted_score": estimate["adjusted_score"], "confidence": estimate["confidence"],
             "average_views": round(sum(item.get("views", 0) for item in items) / len(items), 1),
             "average_retention": round(sum(item.get("average_view_percentage", 0) for item in items if item.get("average_view_percentage") is not None) / max(1, sum(1 for item in items if item.get("average_view_percentage") is not None)), 2),
-            "average_stayed": round(sum(item.get("stayed_to_watch_pct", 0) for item in items if item.get("stayed_to_watch_pct") is not None) / max(1, sum(1 for item in items if item.get("stayed_to_watch_pct") is not None)), 2)
+            "average_stayed": round(sum(item.get("stayed_to_watch_pct", 0) for item in items if item.get("stayed_to_watch_pct") is not None) / max(1, sum(1 for item in items if item.get("stayed_to_watch_pct") is not None)), 2),
+            "viewer_behavior": performance_viewer_behavior(items)
         })
         if len(items) >= 3:
             learning_recommendations.append({"dimension": key, "label": label, "format": media_format, **estimate})
@@ -1649,7 +1672,8 @@ def build_performance_summary(entries):
             "average_views": round(sum(item.get("views", 0) for item in items) / len(items), 1),
             "average_retention": round(sum(item.get("average_view_percentage", 0) for item in items if item.get("average_view_percentage") is not None) / max(1, sum(1 for item in items if item.get("average_view_percentage") is not None)), 2),
             "average_stayed": round(sum(item.get("stayed_to_watch_pct", 0) for item in items if item.get("stayed_to_watch_pct") is not None) / max(1, sum(1 for item in items if item.get("stayed_to_watch_pct") is not None)), 2),
-            "average_view_duration_sec": round(sum(item.get("average_view_duration_sec", 0) for item in items if item.get("average_view_duration_sec") is not None) / max(1, sum(1 for item in items if item.get("average_view_duration_sec") is not None)), 2)
+            "average_view_duration_sec": round(sum(item.get("average_view_duration_sec", 0) for item in items if item.get("average_view_duration_sec") is not None) / max(1, sum(1 for item in items if item.get("average_view_duration_sec") is not None)), 2),
+            "viewer_behavior": performance_viewer_behavior(items)
         })
         baseline = sum(float(item.get("performance_score", 0) or 0) for item in items) / len(items)
         for dimension in ("category", "variant"):
@@ -1659,7 +1683,8 @@ def build_performance_summary(entries):
                     estimate = learning_group_score(matching, baseline)
                     age_comparisons.append({
                         "dimension": dimension, "label": label, "format": media_format,
-                        "age_cohort": cohort, **estimate
+                        "age_cohort": cohort, **estimate,
+                        "viewer_behavior": performance_viewer_behavior(matching)
                     })
 
     category_groups = [item for item in summaries if item["dimension"] == "category" and item["samples"] >= 3]
