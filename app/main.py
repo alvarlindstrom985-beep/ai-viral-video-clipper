@@ -608,7 +608,44 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
         hook = score_opening_hook(start, levels, transcript)
         hook_bonus = hook["score"]
         learning_bonus = learned_category_bonus(categories, media_format)
-        score += learning_bonus + hook_bonus
+
+        # Measure whether activity is sustained across the clip, rather than one isolated spike.
+        # Four buckets combine speech presence and audio activity; these are ranking hints, not
+        # predictions of audience retention.
+        bucket_count = 4
+        bucket_activity = []
+        for bucket in range(bucket_count):
+            bucket_start = start + clip_len * bucket / bucket_count
+            bucket_end = start + clip_len * (bucket + 1) / bucket_count
+            bucket_words = sum(
+                len(item["text"].split()) for item in words
+                if item["end"] > bucket_start and item["start"] < bucket_end
+            )
+            left = max(0, int(bucket_start))
+            right = min(len(levels), max(left + 1, int(math.ceil(bucket_end))))
+            bucket_audio = sum(levels[left:right]) / len(levels[left:right]) if right > left else 0.0
+            bucket_activity.append(bucket_words > 0 or bucket_audio >= 0.025)
+        pacing_score = round(sum(bucket_activity) * 1.5, 2)
+
+        # Reward more than one independent signal family, but cap the bonus.
+        signal_families = sum(bool(value) for value in (
+            funny_hits or laughter_hits, reaction_hits, rage_hits, game_hits,
+            visual["smile_samples"] > 0, audio_score >= 0.06
+        ))
+        diversity_score = round(min(max(0, signal_families - 1) * 1.25, 5.0), 2)
+
+        # A reaction or laugh late in the clip can provide a clearer payoff.
+        payoff_start = start + clip_len * 0.65
+        payoff_words = [
+            item for item in words
+            if item["end"] > payoff_start and item["start"] < end
+        ]
+        payoff_text = " ".join(item["text"].lower() for item in payoff_words)
+        payoff_signal = any(phrase in payoff_text for phrase in STREAMER_FUNNY_PHRASES + RAGE_PHRASES)
+        payoff_signal = payoff_signal or bool(LAUGHTER_PATTERN.search(payoff_text))
+        payoff_score = 2.0 if payoff_signal else 0.0
+
+        score += learning_bonus + hook_bonus + pacing_score + diversity_score + payoff_score
 
         matched_phrases = list(dict.fromkeys(funny_hits + reaction_hits + rage_hits + game_hits))
         reason_parts = []
@@ -628,7 +665,13 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
             "learning_bonus": learning_bonus,
             "hook_score": hook_bonus,
             "hook_signals": hook["signals"],
-            "reason": " · ".join(reason_parts + (["stark öppning"] if hook_bonus >= 4 else [])),
+            "pacing_score": pacing_score,
+            "pacing_buckets_active": sum(bucket_activity),
+            "signal_diversity_score": diversity_score,
+            "signal_families": signal_families,
+            "payoff_score": payoff_score,
+            "viral_ranking_score": round(score, 2),
+            "reason": " · ".join(reason_parts + (["stark öppning"] if hook_bonus >= 4 else []) + (["aktivt genom klippet"] if pacing_score >= 4.5 else []) + (["tydlig payoff mot slutet"] if payoff_score else [])),
             "audio_activity": round(audio_score, 3),
             "matched_phrases": matched_phrases,
             "categories": categories,
