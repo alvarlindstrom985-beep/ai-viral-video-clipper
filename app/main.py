@@ -22,14 +22,29 @@ for folder in (UPLOADS, OUTPUTS, STATIC):
 
 ALLOWED_SUFFIXES = {".mp4", ".mov", ".m4v", ".mkv", ".webm"}
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024
-HIGHLIGHT_WORDS = {
-    "wow", "what", "no", "bro", "insane", "crazy", "lets go", "let's go",
-    "oh my god", "wait", "help", "nej", "va", "sjukt", "herregud", "fan",
-    "jävlar", "kom igen", "seriöst", "hahaha", "haha", "no way", "what the",
+STREAMER_FUNNY_PHRASES = {
+    "hahaha", "hahah", "haha", "hehe", "lol", "lmao", "rofl", "skrattar",
+    "jag dör", "kan inte", "vad gör jag", "vad håller jag på med",
+    "är du seriös", "men herregud", "nej nej nej", "what am i doing",
+    "i'm dead", "im dead", "i can't", "you are kidding", "are you serious",
+    "bro what", "that was so stupid", "this is embarrassing", "i messed up",
+    "my bad", "bruh", "no shot", "ain't no way"
+}
+STREAMER_REACTION_PHRASES = {
+    "WHAT", "WHAT THE", "OH MY GOD", "NO WAY", "LET'S GO", "LETS GO",
+    "BRO", "WAIT", "HELP", "NEJ", "VA", "SJUKT", "HERREGUD", "JÄVLAR",
+    "KOM IGEN", "SERIÖST", "FAN", "ARE YOU KIDDING", "I CAN'T BELIEVE",
+    "HOW DID I", "DID THAT JUST"
+}
+GAME_EVENT_PHRASES = {
     "mission", "heist", "wanted level", "five stars", "police", "cop",
     "explosion", "crash", "chase", "getaway", "busted", "survived",
     "headshot", "sniper", "gang", "casino", "rån", "polis", "sprängde"
 }
+LAUGHTER_PATTERN = re.compile(
+    r"\b(?:ha{2,}|he{2,}|h[eä]h[eä]|lol|lmao|rofl|skrattar|laugh(?:ing|ter)?)\b",
+    re.IGNORECASE
+)
 
 
 def srt_timestamp(seconds: float) -> str:
@@ -65,7 +80,7 @@ def write_clip_subtitles(job_id: str, clip_number: int, start: float, end: float
         ])
     if not lines:
         return None
-    subtitle_path.write_text("\\n".join(lines), encoding="utf-8")
+    subtitle_path.write_text("\n".join(lines), encoding="utf-8")
     return subtitle_path.name
 
 app = FastAPI(title="AI Viral Video Clipper")
@@ -158,27 +173,58 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
         end = start + clip_len
         level_slice = levels[int(start):max(int(start) + 1, int(math.ceil(end)))]
         audio_score = sum(level_slice) / len(level_slice) if level_slice else 0.0
-        words = []
-        if transcript:
-            words = [item for item in transcript if item["end"] >= start and item["start"] <= end]
+        words = [item for item in (transcript or []) if item["end"] >= start and item["start"] <= end]
         word_count = sum(len(item["text"].split()) for item in words)
-        spoken_seconds = sum(max(0.0, min(end, item["end"]) - max(start, item["start"])) for item in words)
         text = " ".join(item["text"].lower() for item in words)
-        matched_phrases = [phrase for phrase in HIGHLIGHT_WORDS if phrase in text]
-        keyword_hits = len(matched_phrases)
+        upper_text = text.upper()
+        funny_hits = [phrase for phrase in STREAMER_FUNNY_PHRASES if phrase in text]
+        reaction_hits = [phrase for phrase in STREAMER_REACTION_PHRASES if phrase in upper_text]
+        game_hits = [phrase for phrase in GAME_EVENT_PHRASES if phrase in text]
+        laughter_hits = len(LAUGHTER_PATTERN.findall(text))
+        exclamations = sum(item["text"].count("!") for item in words)
+        questions = sum(item["text"].count("?") for item in words)
         speech_density = word_count / max(clip_len, 1)
-        # Transcription is the strongest signal; audio energy provides a fallback/tie-breaker.
-        score = (speech_density * 65) + (keyword_hits * 8) + (audio_score * 20)
-        if not transcript:
-            score = audio_score * 100
-        reason = (
-            f"{word_count} transcribed words · {keyword_hits} reaction phrases"
-            if transcript is not None else "Selected using audio activity"
+
+        # Streamer personality is the primary signal; GTA keywords are secondary.
+        streamer_score = (
+            len(funny_hits) * 15 + len(reaction_hits) * 10
+            + min(laughter_hits, 4) * 12 + min(exclamations, 5) * 2
+            + min(questions, 4) * 1.5
         )
+        game_score = len(game_hits) * 3
+        speech_score = min(speech_density * 25, 18)
+        audio_score_points = min(audio_score * 18, 12)
+        score = streamer_score + game_score + speech_score + audio_score_points
+
+        categories = []
+        if funny_hits or laughter_hits:
+            categories.append("Streamerhumor")
+        if reaction_hits:
+            categories.append("Streamerreaktion")
+        if game_hits:
+            categories.append("GTA-händelse")
+        if not categories and (speech_density > 0.35 or audio_score > 0.025):
+            categories.append("Aktivt ögonblick")
+
+        matched_phrases = list(dict.fromkeys(funny_hits + reaction_hits + game_hits))
+        reason_parts = []
+        if funny_hits or laughter_hits:
+            reason_parts.append("rolig kommentar/skrattsignal")
+        if reaction_hits:
+            reason_parts.append("stark spontan reaktion")
+        if game_hits:
+            reason_parts.append("GTA-relaterat uttryck")
+        if not reason_parts:
+            reason_parts.append("tal- och ljudaktivitet")
+
         scored.append({
             "start": start, "end": end, "score": score,
-            "reason": reason, "audio_activity": round(audio_score, 3),
-            "matched_phrases": matched_phrases
+            "reason": " · ".join(reason_parts),
+            "audio_activity": round(audio_score, 3),
+            "matched_phrases": matched_phrases,
+            "categories": categories,
+            "streamer_score": round(streamer_score, 2),
+            "game_score": round(game_score, 2)
         })
 
     scored.sort(key=lambda item: item["score"], reverse=True)
@@ -280,7 +326,10 @@ def process_video(job_id: str, clip_count: int = 3, clip_length: int = 30):
                 "start": round(candidate["start"], 1),
                 "score": round(candidate["score"], 2),
                 "reason": candidate["reason"],
-                "matched_phrases": candidate["matched_phrases"]
+                "matched_phrases": candidate["matched_phrases"],
+                "categories": candidate["categories"],
+                "streamer_score": candidate["streamer_score"],
+                "game_score": candidate["game_score"]
             })
 
     if not results:
@@ -290,6 +339,7 @@ def process_video(job_id: str, clip_count: int = 3, clip_length: int = 30):
         "job_id": job_id,
         "clips": results,
         "analysis": method,
+        "ranking_focus": "Streamerhumor och reaktioner prioriteras före GTA-händelser",
         "transcript_available": transcript is not None,
         "note": "Scores are heuristic estimates, not a guarantee that a clip will go viral."
     }
@@ -297,7 +347,7 @@ def process_video(job_id: str, clip_count: int = 3, clip_length: int = 30):
 
 @app.get("/api/subtitles/{filename}")
 def get_subtitles(filename: str):
-    if not re.fullmatch(r"[a-f0-9]{12}_clip_[1-8]\\.srt", filename):
+    if not re.fullmatch(r"[a-f0-9]{12}_clip_[1-8]\.srt", filename):
         raise HTTPException(400, "Invalid subtitle name")
     path = OUTPUTS / filename
     if not path.is_file():
