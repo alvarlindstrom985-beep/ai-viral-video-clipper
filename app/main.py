@@ -1,4 +1,5 @@
 from array import array
+import importlib.util
 from pathlib import Path
 import math
 import re
@@ -164,7 +165,7 @@ def health():
     return {
         "status": "ok",
         "ffmpeg": shutil.which("ffmpeg") is not None,
-        "whisper_available": __import__("importlib").util.find_spec("faster_whisper") is not None
+        "whisper_available": importlib.util.find_spec("faster_whisper") is not None
     }
 
 
