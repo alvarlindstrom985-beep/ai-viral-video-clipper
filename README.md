@@ -104,12 +104,12 @@ This is a heuristic signal, not reliable emotion recognition: transcription can 
 
 The dashboard includes a manual YouTube Studio metrics tracker. Add a published video's format, content category, edit variant, views, engaged views, Shorts "stayed to watch", average view duration, average percentage viewed, long-form CTR, likes, comments, shares, and subscribers gained. The app stores entries in `outputs/performance.json` and compares category and edit-variant averages. It only shows a leading category or variant after at least three entries in that group.
 
-The comparison score is an internal heuristic, not a viral prediction. For useful comparisons, record metrics at roughly the same age after publishing (for example, after 48 hours) and compare Shorts with Shorts and long-form videos with long-form videos. You can now import a CSV exported from YouTube Studio's Advanced mode. The importer supports common English and Swedish metric headers, asks for default category/format/edit variant when those fields are absent, skips unreadable rows, and detects repeated imports of the exact same file. It does not connect to a Google account or import analytics automatically; you export the CSV yourself.
+The comparison score is an internal heuristic, not a viral prediction. For useful comparisons, record metrics at roughly the same age after publishing (for example, after 48 hours) and compare Shorts with Shorts and long-form videos with long-form videos. Once a category has at least three results in the same format, the ranker can apply a confidence-adjusted bonus or penalty capped at ±3 points. You can now import a CSV exported from YouTube Studio's Advanced mode. The importer supports common English and Swedish metric headers, asks for default category/format/edit variant when those fields are absent, skips unreadable rows, and detects repeated imports of the exact same file. It does not connect to a Google account or import analytics automatically; you export the CSV yourself.
 
 
 ### Cautious feedback-based ranking
 
-Once at least three results exist for a category within the same format (Shorts or long-form), future candidate scores receive a small adjustment based on that category's average historical performance score. The adjustment is capped at ±5 points and is shown in the highlight report/dashboard. This is a lightweight heuristic, not model training; it should not be trusted as a causal conclusion from small or mismatched samples.
+Once at least three results exist for a category within the same format (Shorts or long-form), future candidate scores receive a small adjustment based on that category's historical performance compared with the channel-wide average for that format. Small samples are shrunk toward the baseline; the adjustment can be either a bonus or a penalty and is capped at ±3 points. The report/dashboard shows the applied adjustment. This is a lightweight heuristic, not model training; it should not be trusted as a causal conclusion from small or mismatched samples.
 
 
 ## Optional AI clip reviewer (vision + transcript)
@@ -151,7 +151,7 @@ These are manual suggestions only: the renderer does not apply them, overwrite t
 
 Every selected highlight now receives up to three alternative opening text hooks: a direct quote, a reaction-led option, and a curiosity-led option. They are composed from words found in the clip transcript, not invented descriptions of unseen events. If no usable transcript is available, the app returns no hook options rather than fabricating a quote. The dashboard displays the alternatives for manual comparison.
 
-These are text suggestions only: they are not automatically burned into the video or published. Add the chosen line in your editor and check that it accurately represents the footage. The generator uses local templates and transcript cues; it does not make an extra paid AI request and does not predict which hook will perform best.
+The three suggestions are generated with local templates and transcript cues; they do not make an extra paid AI request or predict which hook will perform best. In batch exports, the three edit variants use one transcript-grounded hook each and burn it into the opening when a usable transcript is available. Check the wording against the footage before publishing. Nothing is uploaded or published automatically.
 
 ## Channel-adaptive ranking
 
