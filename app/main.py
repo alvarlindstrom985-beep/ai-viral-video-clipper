@@ -1368,6 +1368,53 @@ async def import_performance_csv(
     }
 
 
+TITLE_HOOKS = {
+    "Rage/ilska": ["Det här fick honom att tappa det", "Han orkade inte mer…", "Den sjukaste rage-reaktionen"],
+    "Stark reaktion": ["Han kunde inte tro sina ögon", "Ingen såg den här reaktionen komma", "Reaktionen säger allt"],
+    "Humor/skratt": ["Det här spårade ur totalt", "Försök att inte skratta åt det här", "Det blev ännu roligare än väntat"],
+    "GTA-händelse": ["GTA gick från lugnt till kaos", "Det här händer bara i GTA", "Vilket totalt GTA-kaos"],
+    "Annat": ["Det här ögonblicket är helt oväntat", "Vänta på vad som händer", "Det här måste du se"]
+}
+
+
+@app.post("/api/metadata")
+def generate_metadata(payload: dict):
+    """Create editable metadata drafts from user-provided clip context; no external AI call."""
+    category = str(payload.get("category", "Annat"))
+    media_format = str(payload.get("format", "short"))
+    context = re.sub(r"\\s+", " ", str(payload.get("context", "")).strip())[:240]
+    if category not in PERFORMANCE_CATEGORIES or media_format not in PERFORMANCE_FORMATS:
+        raise HTTPException(400, "Ogiltig kategori eller format.")
+    if not context:
+        raise HTTPException(400, "Beskriv kort vad som händer i klippet.")
+    # Keep supplied context factual and compact; avoid inventing events or claims.
+    context = re.sub(r"[<>]", "", context)
+    hooks = TITLE_HOOKS[category]
+    titles = [f"{hook} – {context}" if len(f"{hook} – {context}") <= 95 else hook for hook in hooks]
+    titles.extend([
+        f"{context[:78]}…" if len(context) > 78 else context,
+        f"{'GTA' if category == 'GTA-händelse' else 'Streamer'}: {hooks[0].lower()}"
+    ])
+    titles = list(dict.fromkeys(title[:100] for title in titles))
+    description = (
+        f"{context}. Se hela klippet och avgör själv vad du tycker. "
+        "Prenumerera för fler klipp."
+    )
+    tags = ["#shorts", "#gaming", "#gta" if category == "GTA-händelse" else "#streamer", "#gamingclips"]
+    if category == "Rage/ilska":
+        tags.append("#rage")
+    elif category == "Humor/skratt":
+        tags.append("#funny")
+    elif category == "Stark reaktion":
+        tags.append("#reaction")
+    return {
+        "titles": titles,
+        "description": description,
+        "hashtags": list(dict.fromkeys(tags)),
+        "note": "Mallbaserade förslag – kontrollera att titeln stämmer med klippet. Inga visningar eller händelser garanteras."
+    }
+
+
 @app.get("/api/batch/download/{batch_id}")
 def download_batch(batch_id: str):
     if not re.fullmatch(r"[a-f0-9]{12}", batch_id):
