@@ -491,8 +491,8 @@ def inspect_ass_layout(path: Path, expected_width: int, expected_height: int):
         result["warnings"].append("Undertextfilen kunde inte läsas")
         return result
 
-    play_x = re.search(r"(?im)^PlayResX:\\s*(\\d+)", content)
-    play_y = re.search(r"(?im)^PlayResY:\\s*(\\d+)", content)
+    play_x = re.search(r"(?im)^PlayResX:\s*(\d+)", content)
+    play_y = re.search(r"(?im)^PlayResY:\s*(\d+)", content)
     if not play_x or not play_y:
         result["warnings"].append("Undertextens bildyta saknar giltig upplösning")
         return result
@@ -546,7 +546,7 @@ def inspect_ass_layout(path: Path, expected_width: int, expected_height: int):
     dialogue_lines = [line.split(",", 9)[-1] for line in content.splitlines()
                       if line.startswith("Dialogue:") and line.count(",") >= 9]
     for text_line in dialogue_lines:
-        plain = re.sub(r"\\{[^}]*\\}", "", text_line).strip()
+        plain = re.sub(r"\{[^}]*\}", "", text_line).strip()
         if not plain:
             continue
         style_name = "Default"
