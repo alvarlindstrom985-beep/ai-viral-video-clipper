@@ -404,6 +404,42 @@ def review_clip_with_ai(source: Path, start: float, end: float, transcript):
         return {"status": "error", "message": "AI-granskningen kunde inte slutföras; exporten fortsätter ändå"}
 
 
+def suggest_edit_points(start: float, end: float, transcript, media_format: str = "short"):
+    """Suggest conservative manual trims from transcript timing; never changes the rendered clip."""
+    duration = max(0.0, end - start)
+    segments = [item for item in (transcript or []) if isinstance(item, dict)
+                and isinstance(item.get("start"), (int, float))
+                and isinstance(item.get("end"), (int, float))
+                and item["end"] > start and item["start"] < end
+                and str(item.get("text", "")).strip()]
+    if not segments:
+        return {"status": "no_transcript", "recommended_start_seconds": round(start, 2),
+                "recommended_end_seconds": round(end, 2), "suggested_trim_seconds": 0.0,
+                "suggestions": ["Inget transkript med tidsstämplar – behåll originalklippet och granska manuellt."]}
+    first_speech = max(start, min(float(item["start"]) for item in segments))
+    last_speech = min(end, max(float(item["end"]) for item in segments))
+    proposed_start, proposed_end = start, end
+    suggestions = []
+    leading_gap = first_speech - start
+    if 1.0 <= leading_gap <= 4.0:
+        proposed_start = max(start, first_speech - 0.25)
+        suggestions.append(f"Överväg att korta den tysta öppningen med cirka {leading_gap - 0.25:.1f} s så att talet kommer igång snabbare.")
+    trailing_gap = end - last_speech
+    if 1.2 <= trailing_gap <= 3.5:
+        proposed_end = min(end, last_speech + 0.45)
+        suggestions.append(f"Överväg att korta slutet med cirka {trailing_gap - 0.45:.1f} s, men behåll en kort paus efter sista repliken.")
+    minimum_duration = max(12.0, duration * 0.70) if media_format == "short" else max(30.0, duration * 0.75)
+    if proposed_end - proposed_start < minimum_duration:
+        proposed_start, proposed_end = start, end
+        suggestions = ["Möjliga trimningar skulle göra klippet för kort – behåll originaltiderna."]
+    if not suggestions:
+        suggestions.append("Ingen tydlig tyst öppning eller avslutning hittades i transkriptet – behåll originaltiderna.")
+    return {"status": "suggested" if (proposed_start > start or proposed_end < end) else "unchanged",
+            "recommended_start_seconds": round(proposed_start, 2),
+            "recommended_end_seconds": round(proposed_end, 2),
+            "suggested_trim_seconds": round((proposed_start - start) + (end - proposed_end), 2),
+            "suggestions": suggestions}
+
 def get_duration(source: Path) -> float:
     result = run_command([
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -1089,6 +1125,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     item["text"] for item in (transcript or [])
                     if item["end"] >= candidate["start"] and item["start"] <= candidate["start"] + clip_duration
                 ]
+                edit_suggestions = suggest_edit_points(candidate["start"], candidate["start"] + clip_duration, transcript, media_type)
                 highlights.append({
                     "type": media_type,
                     "number": index,
@@ -1112,7 +1149,8 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     "payoff_score": candidate.get("payoff_score", 0),
                     "rage_phrases": candidate["rage_phrases"],
                     "transcript_excerpt": " ".join(nearby_text)[:1200],
-                    "ai_review": ai_review
+                    "ai_review": ai_review,
+                    "edit_suggestions": edit_suggestions
                 })
         state["highlights"] = highlights
 
