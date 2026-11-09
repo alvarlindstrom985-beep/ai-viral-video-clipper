@@ -1248,7 +1248,7 @@ def select_diverse_candidates(candidates, clip_count: int, allow_overlap=True, c
 
 
 
-def learned_variant_hint(categories, media_format, performance_entries=None):
+def learned_variant_hint(categories, media_format, performance_entries=None, recommendations=None):
     """Suggest a historically stronger edit recipe without removing other variants."""
     category_map = {
         "Rage/ilska-signal": "Rage/ilska",
@@ -1262,8 +1262,9 @@ def learned_variant_hint(categories, media_format, performance_entries=None):
     supported = {category_map[item] for item in categories if item in category_map}
     if not supported:
         return None
+    available_recommendations = recommend_edit_variants(entries) if recommendations is None else recommendations
     matches = [
-        item for item in recommend_edit_variants(entries)
+        item for item in available_recommendations
         if item.get("format") == media_format and item.get("category") in supported
     ]
     if not matches:
@@ -1303,6 +1304,7 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
 
     # Load channel analytics once per analysis, not once for every candidate window.
     learning_entries = read_performance_entries()
+    variant_recommendations = recommend_edit_variants(learning_entries)
     scored = []
     for start in starts:
         end = start + clip_len
@@ -1351,7 +1353,7 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
 
         hook = score_opening_hook(start, levels, transcript)
         hook_bonus = hook["score"]
-        learning_bonus = learned_category_bonus(categories, media_format, learning_entries)\n        variant_hint = learned_variant_hint(categories, media_format, learning_entries)
+        learning_bonus = learned_category_bonus(categories, media_format, learning_entries)\n        variant_hint = learned_variant_hint(categories, media_format, learning_entries, variant_recommendations)
 
         # Measure whether activity is sustained across the clip, rather than one isolated spike.
         # Four buckets combine speech presence and audio activity; these are ranking hints, not
