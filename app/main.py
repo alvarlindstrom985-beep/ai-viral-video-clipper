@@ -614,11 +614,15 @@ def normalize_ai_review(payload):
         "hook_score": bounded(payload.get("hook_score")),
         "clarity_score": bounded(payload.get("clarity_score")),
         "visual_interest_score": bounded(payload.get("visual_interest_score")),
+        "framing_score": bounded(payload.get("framing_score")),
+        "composition_score": bounded(payload.get("composition_score")),
+        "overlay_clutter_score": bounded(payload.get("overlay_clutter_score")),
         "payoff_score": bounded(payload.get("payoff_score")),
         "story_coherence_score": bounded(payload.get("story_coherence_score")),
         "verdict": verdict or "Behöver manuell granskning",
         "strengths": short_list(payload.get("strengths")),
         "weaknesses": short_list(payload.get("weaknesses")),
+        "visual_warnings": short_list(payload.get("visual_warnings"), limit=5),
         "suggestion": str(payload.get("suggestion", "")).strip()[:300]
     }
 
@@ -665,9 +669,15 @@ def review_clip_with_ai(source: Path, start: float, end: float, transcript):
             "Stillbilder kan inte bevisa rörelse eller exakt timing. Bedöm om början snabbt ger sammanhang, "
             "om händelsen går att förstå, om bilderna verkar visuellt intressanta och om slutet ger en payoff. "
             "Svara på svenska med ENDAST ett JSON-objekt med nycklarna score, hook_score, clarity_score, "
-            "visual_interest_score, payoff_score, story_coherence_score (heltal 0-100), verdict (kort text), "
+            "visual_interest_score, framing_score, composition_score, overlay_clutter_score, "
+            "payoff_score, story_coherence_score (heltal 0-100), verdict (kort text), "
             "strengths (lista med max 3 korta punkter), weaknesses (lista med max 3 korta punkter), "
-            "suggestion (en konkret redigeringsidé). Poängen är redaktionella uppskattningar, inte "
+            "visual_warnings (lista med max 5 konkreta visuella problem), suggestion (en konkret redigeringsidé). "
+            "Bedöm framing_score utifrån om viktiga motiv verkar avskurna eller dåligt placerade, "
+            "composition_score utifrån om motivet är tydligt och har användbar bildyta, och "
+            "overlay_clutter_score som HÖG poäng när text/HUD/övriga överlägg inte skymmer viktiga delar. "
+            "Notera bara avskärning, beskärning, överlapp eller svårläst bild som faktiskt syns i stillbilderna. "
+            "Gissa inte var spel-HUD finns om det inte syns. Poängen är redaktionella uppskattningar, inte "
             "förutsägelser om faktisk tittarretention. Om transkript saknas ska du inte låtsas att du hört ljud.\n\n"
             "Transkript: " + (transcript_text or "[Inget transkript tillgängligt]")
         )
