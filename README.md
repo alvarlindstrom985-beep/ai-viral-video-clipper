@@ -110,3 +110,19 @@ The comparison score is an internal heuristic, not a viral prediction. For usefu
 ### Cautious feedback-based ranking
 
 Once at least three results exist for a category within the same format (Shorts or long-form), future candidate scores receive a small adjustment based on that category's average historical performance score. The adjustment is capped at ±5 points and is shown in the highlight report/dashboard. This is a lightweight heuristic, not model training; it should not be trusted as a causal conclusion from small or mismatched samples.
+
+
+## Optional AI clip reviewer (vision + transcript)
+
+A second-pass reviewer can inspect up to three sampled still frames (opening, middle, ending) plus the available speech transcript for each selected highlight. It returns separate editorial scores for the hook, clarity, visual interest, payoff, and story coherence, along with strengths, weaknesses, and one suggested edit. It is a review aid, not a prediction of views or actual audience retention.
+
+To enable it, configure these **server-side** environment variables:
+- `OPENAI_API_KEY` — your OpenAI API key
+- `OPENAI_CLIP_REVIEW_MODEL` — optional; defaults to `gpt-4.1-mini`
+- `OPENAI_CLIP_REVIEW_MAX_CLIPS` — optional; maximum AI-reviewed highlights per batch, defaults to 12 (allowed range 1–30)
+
+The app uses the OpenAI Responses API with image inputs. Without `OPENAI_API_KEY`, no external AI review request is made and the existing local analysis continues as usual. API errors also do not stop video exports. Each reviewed highlight can trigger a separate API request and may incur API charges; check current model pricing before enabling it.
+
+**Privacy:** when enabled, up to three extracted frames and the available transcript excerpt from each reviewed clip are sent to OpenAI for analysis. Configure the key only on the server, never in frontend JavaScript or a public repository. Only process recordings you own or have permission to use. Review OpenAI's current data-use and retention terms before sending footage.
+
+**Limitations:** the reviewer sees still images rather than the full moving video and does not directly listen to the audio. It can miss fast action, timing, sarcasm, context, and important events between sampled frames. Its scores and suggestions need human review.
