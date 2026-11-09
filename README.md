@@ -90,7 +90,7 @@ Captions are generated from automatic speech recognition and can contain mistake
 
 When you upload a source recording and start a batch, the analysis selects the highest-scoring non-overlapping moments for Shorts and longer edits. The dashboard now lists each selected moment with source timestamps, score, reason, categories, and a transcript excerpt when available. The ZIP also includes `highlight-report.json` and `highlight-report.csv` so you can review or edit the timeline separately.
 
-The score is a heuristic based on optional speech transcription, audio activity, and weak visual cues; it is not a guarantee that a moment will perform well. Review every export before publishing. This workflow processes the uploaded source file only; it does not capture or download third-party live streams or VODs.
+The score is a heuristic based on optional speech transcription, audio activity, and weak visual cues; it also gives a small positive bonus for observable hook signals in the first three seconds (early reaction phrases, laughter/humor, speech, and audio activity). A quiet opening is not automatically penalized. The hook score is not a retention prediction and is not a guarantee that a moment will perform well. Review every export before publishing. This workflow processes the uploaded source file only; it does not capture or download third-party live streams or VODs.
 
 
 ## Reaction & Rage Detector
