@@ -22,6 +22,15 @@ if errorlevel 1 (
     exit /b 1
 )
 
+netstat -ano | findstr ":8000" | findstr "LISTENING" >nul
+if not errorlevel 1 (
+    echo Port 8000 is already in use.
+    echo Close the other app using port 8000, then try again.
+    echo You can run CHECK_SETUP.bat for diagnostics.
+    pause
+    exit /b 1
+)
+
 echo Starting AI Viral Video Clipper...
 echo Keep this window open while the clipper is running.
 echo Dashboard: http://127.0.0.1:8000
