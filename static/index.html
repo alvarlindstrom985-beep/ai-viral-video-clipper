@@ -127,7 +127,7 @@
     <p id="sourceStatus" class="muted">Redo. YouTube-bevakningen hittar metadata och länkar, inte videofiler.</p>
     <p id="sourceWatchStatus" class="muted">Automatisk källbevakning är avstängd.</p>
     <div id="sourceResults" class="clips"></div>
-    <p class="notice">Lokal källmapp: <code>source_inbox/</code> i projektmappen. Starta automatisk klippbevakning så kontrolleras mappen var 15:e sekund. Filer måste vara minst 30 sekunder gamla så att kopiering/synkning hinner bli klar. Nya godkända filer köas automatiskt, och originalen flyttas till <code>source_inbox/processed/</code>. Ingen automatisk publicering sker. Bevaka endast egna inspelningar eller material du har uttryckligt tillstånd att bearbeta.</p>
+    <p class="notice">Innan en fil kan klippas måste du bekräfta att du äger materialet, har skriftligt tillstånd eller har en licens som tillåter bearbetning. Bekräftelsen sparas för just den filversionen. Om filen ändras krävs en ny bekräftelse. Endast bekräftade filer behandlas automatiskt. Ingen automatisk publicering sker.</p>
     <h2 class="group-title">Twitch – bevaka lives</h2>
     <p class="muted">Skriv Twitch-kanaler med kommatecken. Modellen kontrollerar vilka som är live via Twitchs officiella API.</p>
     <label class="field">Twitch-kanaler
@@ -198,13 +198,38 @@ async function scanSourceInbox(){
     const response=await fetch('/api/sources/inbox');const data=await response.json();
     if(!response.ok)throw new Error(data.detail||'Kunde inte läsa källmappen');
     sourceResults.innerHTML='';
+    let approved=0;
     data.files.forEach(file=>{
       const card=document.createElement('article');card.className='clip';
       const name=document.createElement('strong');name.textContent=file.filename;
       const size=document.createElement('p');size.className='muted';size.textContent=(file.size_bytes/1024/1024).toFixed(1)+' MB';
-      card.append(name,size);sourceResults.append(card);
+      const state=document.createElement('p');state.className='muted';
+      state.textContent=file.authorized?'Rättigheter bekräftade · '+(file.authorization.rights_holder||''):'Väntar på rättighetsbekräftelse';
+      card.append(name,size,state);
+      if(file.authorized){approved++;}
+      else{
+        const holder=document.createElement('input');holder.type='text';holder.maxLength=160;holder.placeholder='Vem äger materialet eller har gett tillstånd?';holder.style.width='100%';
+        const basis=document.createElement('select');basis.innerHTML='<option value="owner">Jag äger materialet</option><option value="written_permission">Jag har skriftligt tillstånd</option><option value="license">Materialet har en tillämplig licens</option>';
+        const sourceUrl=document.createElement('input');sourceUrl.type='url';sourceUrl.placeholder='Källänk (valfritt)';sourceUrl.style.width='100%';
+        const confirmLabel=document.createElement('label');confirmLabel.className='field';
+        const confirm=document.createElement('input');confirm.type='checkbox';
+        confirmLabel.append(confirm,document.createTextNode(' Jag bekräftar att jag har rätt att bearbeta och skapa klipp av den här filen.'));
+        const approve=document.createElement('button');approve.type='button';approve.textContent='Bekräfta rättigheter';
+        approve.addEventListener('click',async()=>{
+          if(!holder.value.trim()||!confirm.checked){state.textContent='Ange rättighetsinnehavare och kryssa i bekräftelsen.';return}
+          approve.disabled=true;state.textContent='Sparar bekräftelsen...';
+          try{
+            const params=new URLSearchParams({filename:file.filename,fingerprint:file.fingerprint,rights_holder:holder.value.trim(),permission_basis:basis.value,source_url:sourceUrl.value.trim(),confirm:'true'});
+            const saved=await fetch('/api/sources/authorize?'+params.toString(),{method:'POST'});
+            const result=await saved.json();if(!saved.ok)throw new Error(result.detail||'Kunde inte spara bekräftelsen');
+            await scanSourceInbox();
+          }catch(error){state.textContent=error.message;approve.disabled=false}
+        });
+        card.append(holder,basis,sourceUrl,confirmLabel,approve);
+      }
+      sourceResults.append(card);
     });
-    sourceStatus.textContent=data.files.length+' videofiler hittades i '+data.folder+'.';
+    sourceStatus.textContent=data.files.length+' videofiler hittades · '+approved+' har bekräftade rättigheter · '+(data.files.length-approved)+' väntar på bekräftelse.';
   }catch(error){sourceStatus.textContent=error.message}
 }
 async function processSourceInbox(){
