@@ -1473,12 +1473,19 @@ def context_aware_reaction_score(funny_hits, reaction_hits, laughter_hits,
         + min(len(rage_hits), 3) * 5.0
         + min(max(float(visual_score or 0), 0.0), 20.0) * 0.35
     )
+    has_clear_reaction = bool(
+        funny_hits or reaction_hits or laughter_hits or rage_hits or visual_score >= 8
+    )
     priority_score = round(min(30.0, reaction_evidence), 2)
     gameplay_context_score = round(min(len(game_hits) * 1.5, 4.5), 2)
+    # A clip driven only by a GTA keyword should lose to one with a real
+    # streamer reaction. Gameplay remains useful as context, never the lead.
+    reaction_focus_adjustment = 8.0 if has_clear_reaction else (-12.0 if game_hits else 0.0)
     return {
         "priority_score": priority_score,
         "gameplay_context_score": gameplay_context_score,
-        "has_clear_reaction": bool(funny_hits or reaction_hits or laughter_hits or rage_hits or visual_score >= 8)
+        "reaction_focus_adjustment": reaction_focus_adjustment,
+        "has_clear_reaction": has_clear_reaction
     }
 
 
@@ -1538,7 +1545,12 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
         game_score = min(len(game_hits) * 1.5, 4.5)
         speech_score = min(speech_density * 25, 18)
         audio_score_points = min(audio_score * 18, 12)
-        score = streamer_score + rage_score + game_score + speech_score + audio_score_points + visual["visual_score"] + reaction_priority["priority_score"]
+        score = (
+            streamer_score + rage_score + game_score + speech_score
+            + audio_score_points + visual["visual_score"]
+            + reaction_priority["priority_score"]
+            + reaction_priority["reaction_focus_adjustment"]
+        )
 
         categories = []
         if funny_hits or laughter_hits:
@@ -1662,6 +1674,7 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
             "streamer_score": round(streamer_score, 2),
             "reaction_priority_score": reaction_priority["priority_score"],
             "gameplay_context_score": reaction_priority["gameplay_context_score"],
+            "reaction_focus_adjustment": reaction_priority["reaction_focus_adjustment"],
             "has_clear_streamer_reaction": reaction_priority["has_clear_reaction"],
             "rage_score": round(rage_score, 2),
             "rage_phrases": rage_hits,
