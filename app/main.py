@@ -23,6 +23,7 @@ import threading
 from datetime import datetime, timezone
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 
@@ -32,9 +33,11 @@ from fastapi.staticfiles import StaticFiles
 ROOT = Path(__file__).resolve().parent.parent
 UPLOADS = ROOT / "uploads"
 OUTPUTS = ROOT / "outputs"
+SOURCE_INBOX = ROOT / "source_inbox"
+SOURCE_PROCESSED = SOURCE_INBOX / "processed"
 PERFORMANCE_FILE = OUTPUTS / "performance.json"
 STATIC = ROOT / "static"
-for folder in (UPLOADS, OUTPUTS, STATIC):
+for folder in (UPLOADS, OUTPUTS, STATIC, SOURCE_INBOX, SOURCE_PROCESSED):
     folder.mkdir(exist_ok=True)
 
 ALLOWED_SUFFIXES = {".mp4", ".mov", ".m4v", ".mkv", ".webm"}
@@ -365,6 +368,131 @@ def get_live_streamers(channels: str = ""):
             for name in names
         ]
     }
+
+
+def parse_youtube_rss(xml_text, limit=10):
+    """Parse public YouTube channel RSS metadata only; never fetch video media."""
+    namespace = {"atom": "http://www.w3.org/2005/Atom", "yt": "http://www.youtube.com/xml/schemas/2015"}
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as exc:
+        raise ValueError("Ogiltigt YouTube RSS-flöde") from exc
+    items = []
+    for entry in root.findall("atom:entry", namespace)[:max(1, min(int(limit), 20))]:
+        video_id = (entry.findtext("yt:videoId", default="", namespaces=namespace) or "").strip()
+        title = (entry.findtext("atom:title", default="", namespaces=namespace) or "").strip()
+        published = (entry.findtext("atom:published", default="", namespaces=namespace) or "").strip()
+        link = entry.find("atom:link", namespace)
+        href = link.attrib.get("href", "") if link is not None else ""
+        if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id) or not title:
+            continue
+        items.append({
+            "video_id": video_id,
+            "title": title[:300],
+            "published_at": published,
+            "url": "https://www.youtube.com/watch?v=" + video_id,
+            "source": "YouTube RSS"
+        })
+    return items
+
+
+@app.get("/api/sources/youtube")
+def discover_youtube_videos(channels: str = "", limit: int = 5):
+    """Discover public upload metadata from channel RSS; does not download or process videos."""
+    channel_ids = list(dict.fromkeys(part.strip() for part in channels.split(",") if part.strip()))
+    if not channel_ids or len(channel_ids) > 10 or any(not re.fullmatch(r"UC[A-Za-z0-9_-]{22}", item) for item in channel_ids):
+        raise HTTPException(400, "Ange 1–10 giltiga YouTube-kanal-ID:n (UC följt av 22 tecken).")
+    if not 1 <= limit <= 10:
+        raise HTTPException(400, "Limit måste vara mellan 1 och 10.")
+    discovered = []
+    errors = []
+    for channel_id in channel_ids:
+        url = "https://www.youtube.com/feeds/videos.xml?" + urllib.parse.urlencode({"channel_id": channel_id})
+        request = urllib.request.Request(url, headers={"User-Agent": "AI-Viral-Video-Clipper/1.0"})
+        try:
+            with urllib.request.urlopen(request, timeout=12) as response:
+                xml_text = response.read(2_000_000).decode("utf-8", errors="replace")
+            for item in parse_youtube_rss(xml_text, limit=limit):
+                item["channel_id"] = channel_id
+                discovered.append(item)
+        except Exception:
+            errors.append(channel_id)
+    discovered.sort(key=lambda item: item.get("published_at", ""), reverse=True)
+    return {
+        "checked_at": int(time.time()),
+        "videos": discovered[:limit * len(channel_ids)],
+        "errors": errors,
+        "media_access_note": "Detta steg hittar bara offentliga videotitlar och länkar. Själva videofilen måste komma från en källa du äger eller har tillstånd att bearbeta."
+    }
+
+
+@app.get("/api/sources/inbox")
+def list_source_inbox():
+    """List creator-authorized recordings placed in the local source_inbox folder."""
+    files = []
+    for path in sorted(SOURCE_INBOX.iterdir()):
+        if path.is_file() and path.suffix.lower() in ALLOWED_SUFFIXES:
+            stat = path.stat()
+            files.append({"filename": path.name, "size_bytes": stat.st_size, "modified_at": int(stat.st_mtime)})
+    return {
+        "folder": str(SOURCE_INBOX),
+        "files": files,
+        "processed_folder": str(SOURCE_PROCESSED),
+        "note": "Lägg endast in egna inspelningar eller material du har tillstånd att bearbeta."
+    }
+
+
+@app.post("/api/sources/inbox/process", status_code=202)
+def process_source_inbox(background_tasks: BackgroundTasks, short_count: int = 8, long_count: int = 1):
+    """Queue batches from locally staged, authorized source recordings; no platform scraping."""
+    if not 1 <= short_count <= 25 or not 0 <= long_count <= 5:
+        raise HTTPException(400, "Ogiltigt antal videor.")
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        raise HTTPException(500, "Installera FFmpeg och FFprobe först.")
+    candidates = [
+        path for path in sorted(SOURCE_INBOX.iterdir())
+        if path.is_file() and path.suffix.lower() in ALLOWED_SUFFIXES
+    ][:3]
+    if not candidates:
+        raise HTTPException(404, "Källmappen är tom. Lägg egna eller godkända inspelningar i source_inbox.")
+    queued = []
+    for original in candidates:
+        if original.stat().st_size > MAX_UPLOAD_BYTES:
+            continue
+        job_id = uuid.uuid4().hex[:12]
+        source = UPLOADS / f"{job_id}{original.suffix.lower()}"
+        shutil.copy2(original, source)
+        try:
+            duration = get_duration(source)
+            if duration < 5:
+                source.unlink(missing_ok=True)
+                continue
+            estimate = estimate_batch_storage_bytes(source, duration, short_count, long_count, 30, 300, 3)
+            ensure_upload_space(estimate)
+            batch_id = uuid.uuid4().hex[:12]
+            state = {
+                "batch_id": batch_id, "job_id": job_id, "status": "queued",
+                "stage": "Automatiskt källjobb köat", "completed": 0, "total": 0,
+                "results": [], "created": None, "short_count": short_count,
+                "long_count": long_count, "short_length": 30, "long_length": 300,
+                "burn_subtitles": True, "subtitle_style": "classic",
+                "caption_mode": "word_by_word", "variants": 3,
+                "source_filename": original.name,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            BATCH_JOBS[batch_id] = state
+            save_batch_job(batch_id, state)
+            background_tasks.add_task(render_batch_job, batch_id, job_id, short_count, long_count, 30, 300, True, "classic", "word_by_word")
+            SOURCE_PROCESSED.mkdir(exist_ok=True)
+            destination = SOURCE_PROCESSED / (original.name + "." + job_id)
+            shutil.move(str(original), str(destination))
+            queued.append({"batch_id": batch_id, "source_filename": original.name, "status": "queued"})
+        except Exception:
+            source.unlink(missing_ok=True)
+            raise
+    if not queued:
+        raise HTTPException(400, "Inga giltiga videofiler kunde köas.")
+    return {"queued": queued, "count": len(queued), "manual_publishing": True}
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
