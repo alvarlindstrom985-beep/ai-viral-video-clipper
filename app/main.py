@@ -33,7 +33,7 @@ from fastapi.staticfiles import StaticFiles
 ROOT = Path(__file__).resolve().parent.parent
 UPLOADS = ROOT / "uploads"
 OUTPUTS = ROOT / "outputs"
-SOURCE_INBOX = ROOT / "source_inbox"
+SOURCE_INBOX = Path(os.getenv("CLIPPER_SOURCE_INBOX", str(ROOT / "source_inbox"))).expanduser()
 SOURCE_PROCESSED = SOURCE_INBOX / "processed"
 PERFORMANCE_FILE = OUTPUTS / "performance.json"
 STATIC = ROOT / "static"
