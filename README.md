@@ -213,3 +213,12 @@ Efter att ett kandidatögonblick har valts försöker systemet justera start och
 ## Context-Aware Clip Selector – streamerreaktionen först
 
 Klippens ranking ger nu en extra, begränsad prioritet till tydliga streamerreaktioner: skratt, spontana reaktionsuttryck, rage-uttryck och visuella reaktionssignaler. GTA-händelser används som sammanhang och deras separata poäng är avsiktligt begränsad. Ett gameplay-ögonblick utan tydlig streamerreaktion ska därför inte vinna enbart på många spelrelaterade nyckelord. Det här är fortfarande signalbaserad heuristik: den kan inte säkert avgöra ironi, känsloläge eller om en reaktion är genuin.
+
+
+### Reaktionsstyrt urval – streamer före gameplay
+
+- Tydliga streamerreaktioner (skratt, spontana utrop, frustration/rage och visuella reaktionssignaler) är den primära urvalssignalen.
+- Klipp med tydlig reaktion får en extra reaktionsfokusbonus på 8 poäng.
+- GTA-/gameplay-nyckelord ger endast en begränsad kontextpoäng (max 4,5). Gameplay-ögonblick utan tydlig streamerreaktion får ett avdrag på 12 poäng.
+- Dashboarden och batchresultaten visar reaktionspoäng, gameplay-kontext och reaktionsfokusjustering separat.
+- Detta är en heuristik baserad på transkript och tillgängliga visuella signaler. Den kan missa ironi, lågmälda reaktioner eller sammanhang och garanterar inte viralitet.
