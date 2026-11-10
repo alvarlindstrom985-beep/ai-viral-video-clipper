@@ -1284,6 +1284,64 @@ def learned_variant_hint(categories, media_format, performance_entries=None, rec
         "note": "Historisk rekommendation – alla tre versioner skapas fortfarande."
     }
 
+def optimize_clip_boundaries(start: float, end: float, transcript, anchors=None, min_duration_ratio: float = 0.75):
+    """Trim avoidable silence and protect speech boundaries while keeping the selected event."""
+    original_start, original_end = float(start), float(end)
+    duration = max(0.0, original_end - original_start)
+    if duration <= 0:
+        return {"start": original_start, "end": original_end, "adjustments": [], "duration": duration}
+    units = []
+    for segment in transcript or []:
+        if not isinstance(segment, dict):
+            continue
+        words = segment.get("words") or []
+        if words:
+            units.extend({"start": float(word["start"]), "end": float(word["end"])} for word in words if "start" in word and "end" in word)
+        elif "start" in segment and "end" in segment:
+            units.append({"start": float(segment["start"]), "end": float(segment["end"])})
+    units = sorted((item for item in units if item["end"] > original_start and item["start"] < original_end), key=lambda item: item["start"])
+    min_duration = min(duration, max(5.0, duration * min(1.0, max(0.5, min_duration_ratio))))
+    new_start, new_end = original_start, original_end
+    adjustments = []
+    if units:
+        first, last = units[0], units[-1]
+        if first["start"] - original_start > 1.2 and first["start"] - original_start <= duration * 0.20:
+            new_start = min(original_end - min_duration, first["start"] - 0.7)
+            if new_start > original_start:
+                adjustments.append("tog bort onödig tystnad i början")
+        if original_end - last["end"] > 1.5 and original_end - last["end"] <= duration * 0.25:
+            new_end = max(new_start + min_duration, last["end"] + 1.0)
+            if new_end < original_end:
+                adjustments.append("tog bort onödig tystnad i slutet")
+        for unit in units:
+            if unit["start"] < new_start < unit["end"] and unit["start"] >= original_start and new_end - unit["start"] <= duration:
+                new_start = unit["start"]
+                adjustments.append("flyttade starten för att bevara tal")
+                break
+        for unit in units:
+            if unit["start"] < new_end < unit["end"] and unit["end"] <= original_end and unit["end"] - new_start <= duration:
+                new_end = unit["end"]
+                adjustments.append("flyttade slutet för att bevara tal")
+                break
+    protected = [float(item.get("time", -1)) for item in (anchors or []) if original_start <= float(item.get("time", -1)) <= original_end]
+    if protected:
+        event_time = min(protected, key=lambda value: abs(value - ((original_start + original_end) / 2)))
+        if event_time < new_start:
+            new_start = original_start
+            adjustments.append("behöll upptakten till reaktionen")
+        if event_time > new_end:
+            new_end = original_end
+            adjustments.append("behöll själva reaktionen")
+    if new_end - new_start < min_duration:
+        new_start = max(original_start, min(new_start, new_end - min_duration))
+        new_end = min(original_end, max(new_end, new_start + min_duration))
+    new_start = max(original_start, min(new_start, original_end - min_duration))
+    new_end = min(original_end, max(new_end, new_start + min_duration))
+    return {"start": round(new_start, 3), "end": round(new_end, 3), "duration": round(new_end - new_start, 3),
+            "adjustments": list(dict.fromkeys(adjustments)),
+            "changed": abs(new_start - original_start) > 0.01 or abs(new_end - original_end) > 0.01}
+
+
 def clip_boundary_quality(start: float, end: float, transcript, anchors=None):
     """Estimate whether clip cuts through speech and leaves room before a reaction."""
     timed_items = []
@@ -1530,7 +1588,7 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
         if not reason_parts:
             reason_parts.append("tal- och ljudaktivitet")
 
-        scored.append({
+        candidate = {
             "start": start, "end": end, "score": score,
             "_similarity_text": text,
             "learning_bonus": learning_bonus,
@@ -1578,7 +1636,18 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
                 key=lambda value: abs(value - ((start + end) / 2)),
                 default=None
             )
-        })
+        }
+        optimized = optimize_clip_boundaries(start, end, transcript, anchors)
+        candidate["start"] = optimized["start"]
+        candidate["end"] = optimized["end"]
+        candidate["duration"] = optimized["duration"]
+        candidate["boundary_adjustments"] = optimized["adjustments"]
+        candidate["boundaries_optimized"] = optimized["changed"]
+        if candidate["reaction_anchor"] is not None and not (
+            candidate["start"] <= candidate["reaction_anchor"] <= candidate["end"]
+        ):
+            candidate["reaction_anchor"] = None
+        scored.append(candidate)
 
     scored.sort(key=lambda item: item["score"], reverse=True)
     return select_diverse_candidates(scored, clip_count, allow_overlap=allow_overlap)
