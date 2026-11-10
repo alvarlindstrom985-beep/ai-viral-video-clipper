@@ -23,6 +23,12 @@ class AdaptiveClipBoundaryTests(unittest.TestCase):
         self.assertLessEqual(result["start"], 18)
         self.assertGreaterEqual(result["end"], 18)
 
+    def test_expands_boundary_to_preserve_a_cut_word(self):
+        transcript = [{"start": 4.0, "end": 8.0, "text": "word crossing start"}]
+        result = optimize_clip_boundaries(5.0, 25.0, transcript, [])
+        self.assertEqual(result["start"], 4.0)
+        self.assertIn("flyttade starten för att bevara tal", result["adjustments"])
+
     def test_keeps_minimum_duration(self):
         transcript = [{"start": 8, "end": 9, "text": "only speech"}]
         result = optimize_clip_boundaries(0, 20, transcript, [])
