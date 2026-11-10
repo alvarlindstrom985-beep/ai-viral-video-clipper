@@ -2075,7 +2075,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     video_filter = framing + "," + recipe["video_filter"]
                     if subtitle_path and burn_subtitles:
                         video_filter += "," + ffmpeg_subtitle_filter(subtitle_path, subtitle_style, media_type)
-                    hook_options = generate_hook_options(transcript, candidate["start"], candidate["start"] + clip_duration)
+                    hook_options = generate_hook_options(transcript, candidate["start"], candidate["end"])
                     hook_list = hook_options.get("options", [])
                     hook_index = recipe["hook_index"]
                     hook_ass_path = None
@@ -2125,7 +2125,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                         "learned_variant_recommended": bool(candidate.get("learned_variant_hint") and candidate["learned_variant_hint"]["recommended_variant"] == recipe["id"]),
                         "learned_variant_hint": candidate.get("learned_variant_hint"),
                         "start": round(candidate["start"], 1),
-                        "end": round(candidate["start"] + clip_duration, 1),
+                        "end": round(candidate["end"], 1),
                         "duration": round(candidate_duration, 1),
                         "score": round(candidate["score"], 2),
                         "rage_score": candidate["rage_score"],
