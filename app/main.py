@@ -426,7 +426,6 @@ def discover_youtube_videos(channels: str = "", limit: int = 5):
     }
 
 
-@app.get("/api/sources/inbox")
 SOURCE_AUTHORIZATION_FILE = OUTPUTS / "source_authorizations.json"
 SOURCE_PERMISSION_BASES = {"owner", "written_permission", "license"}
 
@@ -510,6 +509,7 @@ def authorize_source_file(
     return {"authorized": True, "filename": path.name, "authorization": authorizations[fingerprint.lower()]}
 
 
+@app.get("/api/sources/inbox")
 def list_source_inbox():
     """List inbox recordings and whether this exact file version has rights approval."""
     authorizations = load_source_authorizations()
