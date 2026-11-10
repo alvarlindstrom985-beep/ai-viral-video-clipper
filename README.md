@@ -39,6 +39,18 @@ The GitHub Actions test suite installs FFmpeg and runs a real render integration
 - Python 3.10+
 - FFmpeg and FFprobe installed and available on PATH
 
+## Windows quick start
+
+1. Install Python 3.10 or newer and make sure Python is available on PATH: https://www.python.org/downloads/windows/
+2. Install FFmpeg with FFprobe and make sure both commands are available on PATH: https://ffmpeg.org/download.html
+3. Download/clone this repository to your Windows PC (for example with GitHub Desktop).
+4. Double-click `INSTALL_CLIPPER.bat` once. It creates the local Python environment and installs the required packages.
+5. Double-click `START_CLIPPER.bat` whenever you want to run the app. It opens the dashboard at http://127.0.0.1:8000. Keep the black terminal window open while using the app; press Ctrl+C there to stop it.
+
+The app automatically detects the Windows OneDrive sync root and uses `OneDrive/AI Viral Video Clipper/Inbox`. Make sure the folder is available on this PC (in File Explorer, choose **Always keep on this device** if Files On-Demand has not downloaded it). On first launch, the app creates the Inbox and `processed` folders if needed. In the dashboard, approve each source file and start the source watcher; the watcher must be started again after an app restart. Only process recordings you own or have permission to use.
+
+The Windows scripts do not install Python or FFmpeg automatically. If FFmpeg is missing, install it and add the folder containing both `ffmpeg.exe` and `ffprobe.exe` to PATH, then reopen the terminal and run the start script again. Speech recognition and visual cues remain optional; install `requirements-ai.txt` and/or `requirements-vision.txt` in the app's virtual environment if you want those features.
+
 ## Run locally
 ```bash
 python -m venv .venv
