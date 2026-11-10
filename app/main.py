@@ -271,10 +271,14 @@ def onedrive_list_files():
 
 @app.post("/api/onedrive/download/{item_id}")
 def onedrive_download_file(item_id: str):
-    if not re.fullmatch(r"[A-Za-z0-9!._-]{1,256}", item_id):
+    if not re.fullmatch(r"[A-Za-z0-9!._=-]{1,512}", item_id):
         raise HTTPException(400, "Ogiltigt OneDrive-fil-ID.")
     token = onedrive_token()
-    metadata = graph_json("https://graph.microsoft.com/v1.0/me/drive/items/" + urllib.parse.quote(item_id, safe="") + "?$select=id,name,size,file", token)
+    metadata = graph_json("https://graph.microsoft.com/v1.0/me/drive/items/" + urllib.parse.quote(item_id, safe="") + "?$select=id,name,size,file,parentReference", token)
+    parent_path = str((metadata.get("parentReference") or {}).get("path", ""))
+    expected_parent = "/root:/" + ONEDRIVE_FOLDER
+    if not parent_path.rstrip("/").lower().endswith(expected_parent.lower()):
+        raise HTTPException(403, "Filen ligger inte i den anslutna OneDrive-Inbox-mappen.")
     filename = Path(str(metadata.get("name", "video.mp4"))).name
     suffix = Path(filename).suffix.lower()
     size = int(metadata.get("size", 0))
