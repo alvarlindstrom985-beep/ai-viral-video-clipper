@@ -442,6 +442,172 @@ def list_source_inbox():
     }
 
 
+
+SOURCE_WATCH_STATE = {
+    "enabled": False,
+    "last_scan_at": None,
+    "last_error": None,
+    "queued_count": 0,
+    "active_file": None
+}
+SOURCE_WATCH_LOCK = threading.RLock()
+SOURCE_WATCH_STOP = threading.Event()
+SOURCE_WATCH_THREAD = None
+SOURCE_WATCH_SEEN_FILE = OUTPUTS / "source_watch_seen.json"
+
+
+def source_file_ready(size_bytes, modified_at, now=None, minimum_age_seconds=30):
+    """Only ingest files whose size/mtime indicate that a sync/copy has finished."""
+    now = time.time() if now is None else float(now)
+    try:
+        return int(size_bytes) > 0 and now - float(modified_at) >= minimum_age_seconds
+    except (TypeError, ValueError):
+        return False
+
+
+def load_source_watch_seen():
+    try:
+        data = json.loads(SOURCE_WATCH_SEEN_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def save_source_watch_seen(seen):
+    temporary = SOURCE_WATCH_SEEN_FILE.with_suffix(".tmp")
+    temporary.write_text(json.dumps(seen, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(SOURCE_WATCH_SEEN_FILE)
+
+
+def source_file_fingerprint(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as source_file:
+        for chunk in iter(lambda: source_file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def queue_authorized_source_file(original, short_count=8, long_count=1):
+    """Copy one authorized source into uploads and start the normal render pipeline."""
+    if not original.is_file() or original.suffix.lower() not in ALLOWED_SUFFIXES:
+        raise ValueError("Ogiltig källfil.")
+    size = original.stat().st_size
+    if size <= 0 or size > MAX_UPLOAD_BYTES:
+        raise ValueError("Källfilen är tom eller större än 2 GB.")
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        raise RuntimeError("Installera FFmpeg och FFprobe först.")
+    job_id = uuid.uuid4().hex[:12]
+    source = UPLOADS / f"{job_id}{original.suffix.lower()}"
+    shutil.copy2(original, source)
+    try:
+        duration = get_duration(source)
+        if duration < 5:
+            raise ValueError("Videon måste vara minst 5 sekunder.")
+        estimate = estimate_batch_storage_bytes(source, duration, short_count, long_count, 30, 300, 3)
+        ensure_upload_space(estimate)
+        batch_id = uuid.uuid4().hex[:12]
+        state = {
+            "batch_id": batch_id, "job_id": job_id, "status": "queued",
+            "stage": "Automatiskt källjobb köat", "completed": 0, "total": 0,
+            "results": [], "created": None, "short_count": short_count,
+            "long_count": long_count, "short_length": 30, "long_length": 300,
+            "burn_subtitles": True, "subtitle_style": "classic",
+            "caption_mode": "word_by_word", "variants": 3,
+            "source_filename": original.name,
+            "source_ingestion": "authorized_local_inbox",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        BATCH_JOBS[batch_id] = state
+        save_batch_job(batch_id, state)
+        worker = threading.Thread(
+            target=render_batch_job,
+            args=(batch_id, job_id, short_count, long_count, 30, 300, True, "classic", "word_by_word"),
+            daemon=True
+        )
+        worker.start()
+        return {"batch_id": batch_id, "job_id": job_id, "source_filename": original.name, "status": "queued"}
+    except Exception:
+        source.unlink(missing_ok=True)
+        raise
+
+
+def source_watch_loop():
+    """Poll the authorized local inbox; never access Twitch/YouTube media URLs."""
+    seen = load_source_watch_seen()
+    while not SOURCE_WATCH_STOP.wait(15):
+        try:
+            with SOURCE_WATCH_LOCK:
+                SOURCE_WATCH_STATE["last_scan_at"] = datetime.now(timezone.utc).isoformat()
+                SOURCE_WATCH_STATE["last_error"] = None
+            files = sorted(
+                path for path in SOURCE_INBOX.iterdir()
+                if path.is_file() and path.suffix.lower() in ALLOWED_SUFFIXES
+            )
+            for original in files:
+                if SOURCE_WATCH_STOP.is_set():
+                    break
+                try:
+                    stat = original.stat()
+                    if not source_file_ready(stat.st_size, stat.st_mtime):
+                        continue
+                    fingerprint = source_file_fingerprint(original)
+                    if fingerprint in seen:
+                        continue
+                    with SOURCE_WATCH_LOCK:
+                        SOURCE_WATCH_STATE["active_file"] = original.name
+                    result = queue_authorized_source_file(original)
+                    SOURCE_PROCESSED.mkdir(exist_ok=True)
+                    destination = SOURCE_PROCESSED / (original.name + "." + result["job_id"])
+                    shutil.move(str(original), str(destination))
+                    seen[fingerprint] = {
+                        "batch_id": result["batch_id"],
+                        "source_filename": original.name,
+                        "queued_at": datetime.now(timezone.utc).isoformat()
+                    }
+                    save_source_watch_seen(seen)
+                    with SOURCE_WATCH_LOCK:
+                        SOURCE_WATCH_STATE["queued_count"] += 1
+                except Exception as exc:
+                    with SOURCE_WATCH_LOCK:
+                        SOURCE_WATCH_STATE["last_error"] = f"{original.name}: {str(exc)[:240]}"
+                finally:
+                    with SOURCE_WATCH_LOCK:
+                        SOURCE_WATCH_STATE["active_file"] = None
+        except Exception as exc:
+            with SOURCE_WATCH_LOCK:
+                SOURCE_WATCH_STATE["last_error"] = str(exc)[:300]
+    with SOURCE_WATCH_LOCK:
+        SOURCE_WATCH_STATE["enabled"] = False
+        SOURCE_WATCH_STATE["active_file"] = None
+
+
+@app.get("/api/sources/watch")
+def get_source_watch_status():
+    with SOURCE_WATCH_LOCK:
+        return dict(SOURCE_WATCH_STATE, scan_interval_seconds=15, minimum_file_age_seconds=30)
+
+
+@app.post("/api/sources/watch/start", status_code=202)
+def start_source_watch():
+    global SOURCE_WATCH_THREAD
+    with SOURCE_WATCH_LOCK:
+        if SOURCE_WATCH_THREAD and SOURCE_WATCH_THREAD.is_alive():
+            SOURCE_WATCH_STATE["enabled"] = True
+            return dict(SOURCE_WATCH_STATE, already_running=True)
+        SOURCE_WATCH_STOP.clear()
+        SOURCE_WATCH_STATE.update({"enabled": True, "last_error": None})
+        SOURCE_WATCH_THREAD = threading.Thread(target=source_watch_loop, daemon=True)
+        SOURCE_WATCH_THREAD.start()
+        return dict(SOURCE_WATCH_STATE, already_running=False)
+
+
+@app.post("/api/sources/watch/stop")
+def stop_source_watch():
+    SOURCE_WATCH_STOP.set()
+    with SOURCE_WATCH_LOCK:
+        SOURCE_WATCH_STATE["enabled"] = False
+        return dict(SOURCE_WATCH_STATE)
+
 @app.post("/api/sources/inbox/process", status_code=202)
 def process_source_inbox(background_tasks: BackgroundTasks, short_count: int = 8, long_count: int = 1):
     """Queue batches from locally staged, authorized source recordings; no platform scraping."""
