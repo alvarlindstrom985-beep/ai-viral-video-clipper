@@ -2070,7 +2070,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                         if subtitle_path is None:
                             subtitle_path = write_batch_subtitles(
                                 batch_id, media_type, clip_index, candidate["start"],
-                                candidate["start"] + clip_duration, transcript
+                                candidate["end"], transcript
                             )
                     video_filter = framing + "," + recipe["video_filter"]
                     if subtitle_path and burn_subtitles:
