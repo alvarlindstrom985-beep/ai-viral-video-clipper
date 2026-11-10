@@ -1314,7 +1314,17 @@ def optimize_clip_boundaries(start: float, end: float, transcript, anchors=None,
             if new_end < original_end:
                 adjustments.append("tog bort onödig tystnad i slutet")
         for unit in units:
-            if unit["start"] < new_start < unit["end"] and unit["start"] >= max(0.0, original_start - 1.5) and new_end - unit["start"] <= duration + 1.5:
+            # Preserve a word already cut by the original boundary, even when
+            # no silence trim was proposed for this clip.
+            if (unit["start"] < original_start < unit["end"]
+                    and original_start - unit["start"] <= 1.5
+                    and new_end - unit["start"] <= duration + 1.5):
+                new_start = min(new_start, unit["start"])
+                adjustments.append("flyttade starten för att bevara tal")
+                break
+            if (unit["start"] < new_start < unit["end"]
+                    and unit["start"] >= max(0.0, original_start - 1.5)
+                    and new_end - unit["start"] <= duration + 1.5):
                 new_start = unit["start"]
                 adjustments.append("flyttade starten för att bevara tal")
                 break
@@ -2109,7 +2119,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     video_filter = framing + "," + recipe["video_filter"]
                     if subtitle_path and burn_subtitles:
                         video_filter += "," + ffmpeg_subtitle_filter(subtitle_path, subtitle_style, media_type)
-                    hook_options = generate_hook_options(transcript, candidate["start"], candidate["end"])
+                    hook_options = generate_hook_options(transcript, candidate["start"], candidate_end)
                     hook_list = hook_options.get("options", [])
                     hook_index = recipe["hook_index"]
                     hook_ass_path = None
