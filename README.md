@@ -259,3 +259,17 @@ Klippens ranking ger nu en extra, begränsad prioritet till tydliga streamerreak
 Every video in the local source inbox must be explicitly approved before either the automatic watcher or manual inbox processing can queue it. In the dashboard, record the rights holder and choose one basis: your own material, written permission, or an applicable license; an optional source URL can also be saved. The user must actively confirm the rights statement. This is a workflow safeguard, not legal verification and not proof that the stated permission is valid.
 
 Approval is bound to the file's SHA-256 fingerprint, not just its filename. If the file contents change, the old approval no longer applies and the new version must be approved. The app stores the provenance record in `outputs/source_authorizations.json` and copies the rights holder, permission basis, source URL, approval timestamp, and fingerprint into the batch-job metadata. Unapproved files remain in the inbox and are ignored by automatic ingestion. Review applicable platform terms, licenses, and permissions before using any recording; no third-party stream or video is downloaded by this feature.
+
+## OneDrive source-folder integration
+
+On Windows, the app automatically detects the OneDrive sync root from the `OneDrive`, `OneDriveCommercial`, or `OneDriveConsumer` environment variable. It then uses:
+
+```text
+OneDrive/AI Viral Video Clipper/Inbox
+```
+
+Create that folder inside your synced OneDrive and place recordings there. The existing source watcher scans it every 15 seconds, waits until a file is at least 30 seconds old, and processes only files with a matching explicit rights approval. After queueing, the original file is moved into the sibling `processed` folder, which is also synced by OneDrive. Only one automatic source batch is queued at a time.
+
+To use another folder, set `CLIPPER_SOURCE_INBOX` to its full local path; this setting takes priority over automatic OneDrive detection. If OneDrive is not installed or synced on the machine running the app, the app falls back to the repository's `source_inbox/` folder.
+
+This is a **OneDrive desktop-sync integration**, not a direct Microsoft Graph connection: OneDrive performs the cloud synchronization and the clipper reads the locally synced files. It does not request Microsoft account passwords or store Microsoft access tokens. The machine running the clipper must have OneDrive sync enabled and the selected folder available locally. On a hosted server without the OneDrive sync client, this method will not access the cloud. Rights approval is still required per exact file version, and nothing is published automatically.
