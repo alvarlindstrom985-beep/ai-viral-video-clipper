@@ -1973,11 +1973,12 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
             ("long", long_candidates, min(float(long_length), duration))
         ):
             for index, candidate in enumerate(candidates, 1):
-                candidate_duration = max(5.0, candidate["end"] - candidate["start"])
+                candidate_end = candidate.get("end", candidate["start"] + clip_duration)
+                candidate_duration = max(5.0, candidate_end - candidate["start"])
                 if os.getenv("OPENAI_API_KEY", "").strip() and ai_review_count < ai_review_limit:
                     state["stage"] = f"AI-granskar {media_type} {index}"
                     ai_review = review_clip_with_ai(
-                        source, candidate["start"], candidate["end"], transcript
+                        source, candidate["start"], candidate_end, transcript
                     )
                     ai_review_count += 1
                 elif os.getenv("OPENAI_API_KEY", "").strip():
@@ -2047,7 +2048,8 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
         quality_checks = []
         for media_type, candidates, clip_duration in groups:
             for clip_index, candidate in enumerate(candidates, 1):
-                candidate_duration = max(5.0, candidate["end"] - candidate["start"])
+                candidate_end = candidate.get("end", candidate["start"] + clip_duration)
+                candidate_duration = max(5.0, candidate_end - candidate["start"])
                 for recipe in recipes:
                     filename = f"{job_id}_{media_type}_{clip_index:02d}_{recipe['id']}.mp4"
                     out = OUTPUTS / filename
@@ -2060,7 +2062,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                         # Keep a conventional SRT sidecar for editing/accessibility in every mode.
                         write_batch_subtitles(
                             batch_id, media_type, clip_index, candidate["start"],
-                            candidate["end"], transcript
+                            candidate_end, transcript
                         )
                         if caption_mode == "word_by_word":
                             subtitle_path = write_word_karaoke_ass(
