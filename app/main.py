@@ -1889,6 +1889,8 @@ def process_video(job_id: str, clip_count: int = 3, clip_length: int = 30):
                 "start": round(candidate["start"], 1),
                 "end": round(candidate["end"], 1),
                 "duration": round(candidate_length, 1),
+                "boundaries_optimized": candidate.get("boundaries_optimized", False),
+                "boundary_adjustments": candidate.get("boundary_adjustments", []),
                 "reaction_anchor": round(candidate["reaction_anchor"], 1) if candidate["reaction_anchor"] is not None else None,
                 "score": round(candidate["score"], 2),
                 "reason": candidate["reason"],
@@ -1984,15 +1986,18 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     ai_review = {"status": "not_configured", "message": "Lägg till OPENAI_API_KEY på servern för AI-granskning"}
                 nearby_text = [
                     item["text"] for item in (transcript or [])
-                    if item["end"] >= candidate["start"] and item["start"] <= candidate["start"] + clip_duration
+                    if item["end"] >= candidate["start"] and item["start"] <= candidate["end"]
                 ]
-                edit_suggestions = suggest_edit_points(candidate["start"], candidate["start"] + clip_duration, transcript, media_type)
-                hook_options = generate_hook_options(transcript, candidate["start"], candidate["start"] + clip_duration)
+                edit_suggestions = suggest_edit_points(candidate["start"], candidate["end"], transcript, media_type)
+                hook_options = generate_hook_options(transcript, candidate["start"], candidate["end"])
                 highlights.append({
                     "type": media_type,
                     "number": index,
                     "start_seconds": round(candidate["start"], 2),
-                    "end_seconds": round(candidate["start"] + clip_duration, 2),
+                    "end_seconds": round(candidate["end"], 2),
+                    "duration_seconds": round(candidate_duration, 2),
+                    "boundaries_optimized": candidate.get("boundaries_optimized", False),
+                    "boundary_adjustments": candidate.get("boundary_adjustments", []),
                     "score": round(candidate["score"], 2),
                     "reason": candidate["reason"],
                     "categories": candidate["categories"],
@@ -2060,7 +2065,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                         if caption_mode == "word_by_word":
                             subtitle_path = write_word_karaoke_ass(
                                 batch_id, media_type, clip_index, candidate["start"],
-                                candidate["start"] + clip_duration, transcript
+                                candidate["end"], transcript
                             )
                         if subtitle_path is None:
                             subtitle_path = write_batch_subtitles(
