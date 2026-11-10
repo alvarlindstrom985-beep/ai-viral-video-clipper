@@ -117,6 +117,16 @@
     <label class="field">YouTube-kanal-ID:n (UC...; separera med kommatecken)
       <input id="youtubeChannels" type="text" placeholder="UCxxxxxxxxxxxxxxxxxxxxxx" style="width:100%;max-width:650px">
     </label>
+    <h3>Direktanslutning till OneDrive</h3>
+    <p class="muted">Anslut med Microsofts säkra enhetsinloggning. Appen får endast läsbehörighet till dina filer. Den sparar åtkomsttoken i minnet, inte på disk.</p>
+    <div class="settings">
+      <button id="oneDriveConnect" type="button">Anslut OneDrive</button>
+      <button id="oneDriveCheck" type="button">Kontrollera inloggning</button>
+      <button id="oneDriveList" type="button">Visa videor i OneDrive</button>
+      <button id="oneDriveDisconnect" type="button">Koppla från</button>
+    </div>
+    <p id="oneDriveStatus" class="muted">OneDrive är inte anslutet. Kräver MICROSOFT_CLIENT_ID från en Microsoft Entra-appregistrering.</p>
+    <div id="oneDriveFiles" class="clips"></div>
     <div class="settings">
       <button id="discoverYoutube" type="button">Hitta nya YouTube-videor</button>
       <button id="scanInbox" type="button">Kontrollera källmappen</button>
@@ -242,6 +252,71 @@ async function processSourceInbox(){
   }catch(error){sourceStatus.textContent=error.message}
   finally{processInboxButton.disabled=false}
 }
+const oneDriveStatus=document.querySelector('#oneDriveStatus');
+const oneDriveFiles=document.querySelector('#oneDriveFiles');
+const oneDriveConnect=document.querySelector('#oneDriveConnect');
+const oneDriveCheck=document.querySelector('#oneDriveCheck');
+const oneDriveList=document.querySelector('#oneDriveList');
+const oneDriveDisconnect=document.querySelector('#oneDriveDisconnect');
+let oneDriveDeviceCode=null;
+async function oneDriveRequest(url,options={}){
+  const response=await fetch(url,options);const data=await response.json();
+  if(!response.ok)throw new Error(data.detail||'OneDrive-fel');return data;
+}
+async function refreshOneDriveStatus(){
+  try{
+    const data=await oneDriveRequest('/api/onedrive/status');
+    oneDriveStatus.textContent=!data.configured?'MICROSOFT_CLIENT_ID saknas på servern.':
+      (data.connected?'OneDrive anslutet'+(data.account?' som '+data.account:''):'OneDrive är inte anslutet.')+
+      ' · Mapp: '+data.folder;
+  }catch(error){oneDriveStatus.textContent=error.message}
+}
+oneDriveConnect.addEventListener('click',async()=>{
+  oneDriveConnect.disabled=true;
+  try{
+    const data=await oneDriveRequest('/api/onedrive/connect/start',{method:'POST'});
+    oneDriveDeviceCode=data.user_code;
+    oneDriveStatus.textContent='Öppna '+data.verification_uri+' och ange koden '+data.user_code+'. Klicka sedan på Kontrollera inloggning. Koden gäller i cirka '+Math.ceil(data.expires_in/60)+' minuter.';
+    const link=document.createElement('a');link.href=data.verification_uri;link.target='_blank';link.rel='noopener noreferrer';link.textContent='Öppna Microsofts inloggning';
+    oneDriveStatus.append(document.createTextNode(' '),link);
+  }catch(error){oneDriveStatus.textContent=error.message}
+  finally{oneDriveConnect.disabled=false}
+});
+oneDriveCheck.addEventListener('click',async()=>{
+  try{
+    const data=await oneDriveRequest('/api/onedrive/connect/poll',{method:'POST'});
+    if(data.pending){oneDriveStatus.textContent='Väntar på Microsoft-inloggningen. Slutför den i fliken där du angav koden och kontrollera igen.';return}
+    oneDriveDeviceCode=null;oneDriveStatus.textContent='OneDrive är anslutet'+(data.account?' som '+data.account:'')+'.';await refreshOneDriveStatus();
+  }catch(error){oneDriveStatus.textContent=error.message}
+});
+oneDriveList.addEventListener('click',async()=>{
+  oneDriveFiles.innerHTML='';oneDriveStatus.textContent='Hämtar fillistan från OneDrive...';
+  try{
+    const data=await oneDriveRequest('/api/onedrive/files');
+    if(!data.files.length){oneDriveStatus.textContent='Inga videofiler hittades i OneDrive/'+data.folder+'. Skapa mappen och lägg till videor.';return}
+    oneDriveStatus.textContent=data.files.length+' videofiler hittades i OneDrive/'+data.folder+'.';
+    data.files.forEach(file=>{
+      const card=document.createElement('article');card.className='clip';
+      const title=document.createElement('strong');title.textContent=file.name;
+      const size=document.createElement('p');size.className='muted';size.textContent=(file.size_bytes/1024/1024).toFixed(1)+' MB';
+      const download=document.createElement('button');download.type='button';download.textContent='Hämta till källmappen';
+      download.addEventListener('click',async()=>{
+        download.disabled=true;oneDriveStatus.textContent='Hämtar '+file.name+'...';
+        try{
+          const result=await oneDriveRequest('/api/onedrive/download/'+encodeURIComponent(file.id),{method:'POST'});
+          oneDriveStatus.textContent=result.filename+' har hämtats. Bekräfta rättigheterna i den vanliga källistan innan klippning.';
+          await scanSourceInbox();
+        }catch(error){oneDriveStatus.textContent=error.message;download.disabled=false}
+      });
+      card.append(title,size,download);oneDriveFiles.append(card);
+    });
+  }catch(error){oneDriveStatus.textContent=error.message}
+});
+oneDriveDisconnect.addEventListener('click',async()=>{
+  try{await oneDriveRequest('/api/onedrive/disconnect',{method:'POST'});oneDriveFiles.innerHTML='';await refreshOneDriveStatus()}
+  catch(error){oneDriveStatus.textContent=error.message}
+});
+refreshOneDriveStatus();
 discoverYoutubeButton.addEventListener('click',discoverYoutube);
 scanInboxButton.addEventListener('click',scanSourceInbox);
 processInboxButton.addEventListener('click',processSourceInbox);
