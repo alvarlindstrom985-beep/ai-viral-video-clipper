@@ -222,3 +222,11 @@ Klippens ranking ger nu en extra, begränsad prioritet till tydliga streamerreak
 - GTA-/gameplay-nyckelord ger endast en begränsad kontextpoäng (max 4,5). Gameplay-ögonblick utan tydlig streamerreaktion får ett avdrag på 12 poäng.
 - Dashboarden och batchresultaten visar reaktionspoäng, gameplay-kontext och reaktionsfokusjustering separat.
 - Detta är en heuristik baserad på transkript och tillgängliga visuella signaler. Den kan missa ironi, lågmälda reaktioner eller sammanhang och garanterar inte viralitet.
+
+
+### Koppling mellan streamerreaktion och GTA-händelse
+
+- Transkriberade segment med GTA-händelser jämförs tidsmässigt med efterföljande skratt, spontana utrop eller rage-uttryck.
+- En händelse som inträffar högst 8 sekunder före en tydlig reaktion kan ge upp till 5 extra poäng.
+- Kopplingen visas i dashboarden och följer med i batchens highlight-data.
+- Detta är en tidsbaserad textheuristik, inte säker förståelse av bildinnehåll eller orsakssamband. Den kan missa händelser som inte nämns i talet.
