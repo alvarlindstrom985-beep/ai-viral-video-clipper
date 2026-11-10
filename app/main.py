@@ -152,6 +152,10 @@ def onedrive_http_json(url, data=None, headers=None):
         except Exception:
             detail = {}
         error = detail.get("error", "request_failed")
+        if exc.code == 404:
+            raise HTTPException(404, "OneDrive-mappen hittades inte. Skapa mappen AI Viral Video Clipper/Inbox i ditt OneDrive.") from exc
+        if exc.code == 401:
+            raise HTTPException(401, "OneDrive-inloggningen har gått ut. Anslut igen.") from exc
         if error == "authorization_pending":
             return {"error": error}
         if error == "slow_down":
@@ -233,6 +237,24 @@ def graph_json(url, token):
     return onedrive_http_json(url, headers={"Authorization": "Bearer " + token})
 
 
+def normalize_onedrive_video_item(item):
+    """Return safe, minimal metadata for supported video files only."""
+    if not isinstance(item, dict) or not item.get("file"):
+        return None
+    name = Path(str(item.get("name", ""))).name
+    item_id = item.get("id")
+    try:
+        size = int(item.get("size", 0))
+    except (TypeError, ValueError):
+        return None
+    if (not name or not isinstance(item_id, str) or not item_id
+            or Path(name).suffix.lower() not in ALLOWED_SUFFIXES
+            or size <= 0 or size > MAX_UPLOAD_BYTES):
+        return None
+    return {"id": item_id, "name": name, "size_bytes": size,
+            "modified_at": item.get("lastModifiedDateTime")}
+
+
 @app.get("/api/onedrive/files")
 def onedrive_list_files():
     token = onedrive_token()
@@ -241,10 +263,9 @@ def onedrive_list_files():
     data = graph_json(url, token)
     files = []
     for item in data.get("value", []):
-        name = str(item.get("name", ""))
-        if item.get("file") and Path(name).suffix.lower() in ALLOWED_SUFFIXES:
-            files.append({"id": item.get("id"), "name": name, "size_bytes": int(item.get("size", 0)),
-                          "modified_at": item.get("lastModifiedDateTime")})
+        normalized = normalize_onedrive_video_item(item)
+        if normalized:
+            files.append(normalized)
     return {"folder": ONEDRIVE_FOLDER, "files": files, "note": "Endast metadata visas här. Välj uttryckligen vilka filer som ska hämtas; rättighetsbekräftelse krävs efter nedladdning."}
 
 
