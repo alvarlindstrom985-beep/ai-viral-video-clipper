@@ -230,3 +230,12 @@ Klippens ranking ger nu en extra, begränsad prioritet till tydliga streamerreak
 - En händelse som inträffar högst 8 sekunder före en tydlig reaktion kan ge upp till 5 extra poäng.
 - Kopplingen visas i dashboarden och följer med i batchens highlight-data.
 - Detta är en tidsbaserad textheuristik, inte säker förståelse av bildinnehåll eller orsakssamband. Den kan missa händelser som inte nämns i talet.
+
+
+### Audiovisuell kontextkoppling
+
+- Reaktionskopplingen använder både talade GTA-händelser och tidsstämplade ljud-/bildsignaler.
+- Om en tydlig streamerreaktion följer efter en talad GTA-händelse inom 8 sekunder kan den ge 5 poäng.
+- Om händelsen inte nämns i talet kan en närliggande ljudtopp (högst 3 sekunder före reaktionen) ge 2 poäng, eller en visuell smile-signal ge 1 poäng.
+- Ljud- och bildsignaler är endast svagt stöd för sammanhang; de bevisar inte vilken spelhändelse som orsakade reaktionen.
+- Dashboard och exporter visar vilken evidenskälla som användes. Streamerreaktionen förblir den primära urvalssignalen.
