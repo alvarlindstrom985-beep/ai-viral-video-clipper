@@ -121,10 +121,13 @@
       <button id="discoverYoutube" type="button">Hitta nya YouTube-videor</button>
       <button id="scanInbox" type="button">Kontrollera källmappen</button>
       <button id="processInbox" type="button">Clippa material i källmappen</button>
+      <button id="startSourceWatch" type="button">Starta automatisk klippbevakning</button>
+      <button id="stopSourceWatch" type="button" disabled>Stoppa automatisk bevakning</button>
     </div>
     <p id="sourceStatus" class="muted">Redo. YouTube-bevakningen hittar metadata och länkar, inte videofiler.</p>
+    <p id="sourceWatchStatus" class="muted">Automatisk källbevakning är avstängd.</p>
     <div id="sourceResults" class="clips"></div>
-    <p class="notice">Lokal källmapp: <code>source_inbox/</code> i projektmappen. Lägg där egna inspelningar eller filer som kreatören uttryckligen har gett tillstånd att använda. När du startar klippningen köas upp till 3 filer åt gången, och originalen flyttas till <code>source_inbox/processed/</code>. Ingen automatisk publicering sker.</p>
+    <p class="notice">Lokal källmapp: <code>source_inbox/</code> i projektmappen. Starta automatisk klippbevakning så kontrolleras mappen var 15:e sekund. Filer måste vara minst 30 sekunder gamla så att kopiering/synkning hinner bli klar. Nya godkända filer köas automatiskt, och originalen flyttas till <code>source_inbox/processed/</code>. Ingen automatisk publicering sker. Bevaka endast egna inspelningar eller material du har uttryckligt tillstånd att bearbeta.</p>
     <h2 class="group-title">Twitch – bevaka lives</h2>
     <p class="muted">Skriv Twitch-kanaler med kommatecken. Modellen kontrollerar vilka som är live via Twitchs officiella API.</p>
     <label class="field">Twitch-kanaler
@@ -146,6 +149,31 @@ const scanInboxButton=document.querySelector('#scanInbox');
 const processInboxButton=document.querySelector('#processInbox');
 const sourceStatus=document.querySelector('#sourceStatus');
 const sourceResults=document.querySelector('#sourceResults');
+const startSourceWatchButton=document.querySelector('#startSourceWatch');
+const stopSourceWatchButton=document.querySelector('#stopSourceWatch');
+const sourceWatchStatus=document.querySelector('#sourceWatchStatus');
+async function refreshSourceWatch(){
+  try{
+    const response=await fetch('/api/sources/watch');const data=await response.json();
+    startSourceWatchButton.disabled=!!data.enabled;stopSourceWatchButton.disabled=!data.enabled;
+    sourceWatchStatus.textContent=(data.enabled?'Automatisk bevakning aktiv':'Automatisk bevakning avstängd')+
+      ' · Kontrollerar var 15:e sekund · Köade jobb: '+data.queued_count+
+      (data.active_file?' · Läser: '+data.active_file:'')+
+      (data.last_error?' · Senaste fel: '+data.last_error:'');
+  }catch(error){sourceWatchStatus.textContent='Kunde inte läsa bevakningsstatus: '+error.message}
+}
+async function setSourceWatch(action){
+  startSourceWatchButton.disabled=true;stopSourceWatchButton.disabled=true;
+  try{
+    const response=await fetch('/api/sources/watch/'+action,{method:'POST'});
+    const data=await response.json();if(!response.ok)throw new Error(data.detail||'Kunde inte ändra bevakningen');
+    await refreshSourceWatch();
+  }catch(error){sourceWatchStatus.textContent=error.message;startSourceWatchButton.disabled=false}
+}
+startSourceWatchButton.addEventListener('click',()=>setSourceWatch('start'));
+stopSourceWatchButton.addEventListener('click',()=>setSourceWatch('stop'));
+setInterval(refreshSourceWatch,5000);
+refreshSourceWatch();
 async function discoverYoutube(){
   const channels=youtubeInput.value.trim();
   if(!channels){sourceStatus.textContent='Ange minst ett YouTube-kanal-ID.';return}
