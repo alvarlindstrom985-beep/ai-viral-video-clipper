@@ -255,18 +255,37 @@ def normalize_onedrive_video_item(item):
             "modified_at": item.get("lastModifiedDateTime")}
 
 
+def list_onedrive_video_items(token, initial_url, fetcher=graph_json, max_pages=10):
+    """Collect supported videos across a bounded number of trusted Graph pages."""
+    files = []
+    url = initial_url
+    pages = 0
+    has_more_pages = False
+    while url and pages < max_pages:
+        parsed = urllib.parse.urlsplit(url)
+        if parsed.scheme != "https" or parsed.hostname != "graph.microsoft.com" or not parsed.path.startswith("/v1.0/"):
+            raise HTTPException(502, "Microsoft Graph returnerade en ogiltig sidlänk.")
+        data = fetcher(url, token)
+        if not isinstance(data, dict):
+            raise HTTPException(502, "Microsoft Graph returnerade ett ogiltigt filsvar.")
+        for item in data.get("value", []):
+            normalized = normalize_onedrive_video_item(item)
+            if normalized:
+                files.append(normalized)
+        url = data.get("@odata.nextLink")
+        pages += 1
+    has_more_pages = bool(url)
+    return files, has_more_pages
+
+
 @app.get("/api/onedrive/files")
 def onedrive_list_files():
     token = onedrive_token()
     folder_path = urllib.parse.quote(ONEDRIVE_FOLDER, safe="/")
     url = "https://graph.microsoft.com/v1.0/me/drive/root:/" + folder_path + ":/children?$select=id,name,size,file,folder,lastModifiedDateTime&$top=100"
-    data = graph_json(url, token)
-    files = []
-    for item in data.get("value", []):
-        normalized = normalize_onedrive_video_item(item)
-        if normalized:
-            files.append(normalized)
-    return {"folder": ONEDRIVE_FOLDER, "files": files, "note": "Endast metadata visas här. Välj uttryckligen vilka filer som ska hämtas; rättighetsbekräftelse krävs efter nedladdning."}
+    files, has_more_pages = list_onedrive_video_items(token, url)
+    return {"folder": ONEDRIVE_FOLDER, "files": files, "has_more_pages": has_more_pages,
+            "note": "Endast metadata visas här. Högst 1000 videor listas per kontroll; välj uttryckligen vilka filer som ska hämtas och bekräfta rättigheterna efter nedladdning."}
 
 
 @app.post("/api/onedrive/download/{item_id}")
