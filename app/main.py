@@ -33,7 +33,23 @@ from fastapi.staticfiles import StaticFiles
 ROOT = Path(__file__).resolve().parent.parent
 UPLOADS = ROOT / "uploads"
 OUTPUTS = ROOT / "outputs"
-SOURCE_INBOX = Path(os.getenv("CLIPPER_SOURCE_INBOX", str(ROOT / "source_inbox"))).expanduser()
+def resolve_source_inbox(environ=None, root=ROOT):
+    """Prefer a locally synced OneDrive folder when available; allow explicit override."""
+    environ = os.environ if environ is None else environ
+    configured = str(environ.get("CLIPPER_SOURCE_INBOX", "")).strip()
+    if configured:
+        return Path(configured).expanduser()
+    onedrive_root = (
+        str(environ.get("OneDrive", "")).strip()
+        or str(environ.get("OneDriveCommercial", "")).strip()
+        or str(environ.get("OneDriveConsumer", "")).strip()
+    )
+    if onedrive_root:
+        return Path(onedrive_root).expanduser() / "AI Viral Video Clipper" / "Inbox"
+    return Path(root) / "source_inbox"
+
+
+SOURCE_INBOX = resolve_source_inbox()
 SOURCE_PROCESSED = SOURCE_INBOX / "processed"
 PERFORMANCE_FILE = OUTPUTS / "performance.json"
 STATIC = ROOT / "static"
