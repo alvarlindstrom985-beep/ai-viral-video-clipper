@@ -253,3 +253,9 @@ Klippens ranking ger nu en extra, begränsad prioritet till tydliga streamerreak
 - Om händelsen inte nämns i talet kan en närliggande ljudtopp (högst 3 sekunder före reaktionen) ge 2 poäng, eller en visuell smile-signal ge 1 poäng.
 - Ljud- och bildsignaler är endast svagt stöd för sammanhang; de bevisar inte vilken spelhändelse som orsakade reaktionen.
 - Dashboard och exporter visar vilken evidenskälla som användes. Streamerreaktionen förblir den primära urvalssignalen.
+
+## Source rights approval and provenance
+
+Every video in the local source inbox must be explicitly approved before either the automatic watcher or manual inbox processing can queue it. In the dashboard, record the rights holder and choose one basis: your own material, written permission, or an applicable license; an optional source URL can also be saved. The user must actively confirm the rights statement. This is a workflow safeguard, not legal verification and not proof that the stated permission is valid.
+
+Approval is bound to the file's SHA-256 fingerprint, not just its filename. If the file contents change, the old approval no longer applies and the new version must be approved. The app stores the provenance record in `outputs/source_authorizations.json` and copies the rights holder, permission basis, source URL, approval timestamp, and fingerprint into the batch-job metadata. Unapproved files remain in the inbox and are ignored by automatic ingestion. Review applicable platform terms, licenses, and permissions before using any recording; no third-party stream or video is downloaded by this feature.
