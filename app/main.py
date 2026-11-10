@@ -178,7 +178,7 @@ def onedrive_connect_start():
     if not client_id:
         raise HTTPException(503, "OneDrive kräver MICROSOFT_CLIENT_ID från en Microsoft Entra-appregistrering.")
     payload = urllib.parse.urlencode({"client_id": client_id, "scope": "Files.Read User.Read"}).encode()
-    data = onedrive_http_json("https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode", data=payload,
+    data = onedrive_http_json("https://login.microsoftonline.com/common/oauth2/v2.0/devicecode", data=payload,
                               headers={"Content-Type": "application/x-www-form-urlencoded"})
     with ONEDRIVE_LOCK:
         ONEDRIVE_AUTH["device"] = {"device_code": data["device_code"],
@@ -203,7 +203,7 @@ def onedrive_connect_poll():
         raise HTTPException(410, "Inloggningskoden har gått ut. Starta anslutningen igen.")
     payload = urllib.parse.urlencode({"grant_type": "urn:ietf:params:oauth:grant-type:device_code",
         "client_id": client_id, "device_code": device["device_code"]}).encode()
-    data = onedrive_http_json("https://login.microsoftonline.com/consumers/oauth2/v2.0/token", data=payload,
+    data = onedrive_http_json("https://login.microsoftonline.com/common/oauth2/v2.0/token", data=payload,
                               headers={"Content-Type": "application/x-www-form-urlencoded"})
     if data.get("error") in {"authorization_pending", "slow_down"}:
         return {"connected": False, "pending": True, "interval": device["interval"] + (5 if data.get("error") == "slow_down" else 0)}
