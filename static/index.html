@@ -468,6 +468,14 @@ async function loadBatchHistory(){
       const progressLine=document.createElement('p');progressLine.className='muted';
       progressLine.textContent=(job.completed||0)+' av '+(job.total||0)+' exporter klara';
       card.append(title,status,progressLine);
+      if(job.source_filename){
+        const provenance=document.createElement('p');provenance.className='muted';
+        provenance.textContent='Källa: '+job.source_filename+' · Rättighetsinnehavare: '+(job.source_rights_holder||'ej angiven')+' · Grund: '+(job.source_permission_basis||'ej angiven');
+        card.append(provenance);
+        if(job.source_url){
+          const sourceLink=document.createElement('a');sourceLink.href=job.source_url;sourceLink.target='_blank';sourceLink.rel='noopener noreferrer';sourceLink.textContent='Öppna registrerad källänk';card.append(sourceLink);
+        }
+      }
       if(job.can_resume){
         const resume=document.createElement('button');resume.type='button';resume.textContent='Starta om batchen';
         resume.addEventListener('click',async()=>{
