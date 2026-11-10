@@ -31,9 +31,9 @@ class OneDriveMetadataTests(unittest.TestCase):
     def test_lists_videos_across_graph_pages(self):
         calls = []
         pages = [
-            {"value": [{"id": "one", "name": "one.mp4", "size": 100, "file": {}}],
+            {"value": [{"id": "one", "name": "one.mp4", "size": 100, "file": {"mimeType": "video/mp4"}}],
              "@odata.nextLink": "https://graph.microsoft.com/v1.0/me/drive/root/children?$skiptoken=abc"},
-            {"value": [{"id": "two", "name": "two.mov", "size": 200, "file": {}}]},
+            {"value": [{"id": "two", "name": "two.mov", "size": 200, "file": {"mimeType": "video/quicktime"}}]},
         ]
 
         def fetcher(url, token):
