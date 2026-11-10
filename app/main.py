@@ -1314,12 +1314,12 @@ def optimize_clip_boundaries(start: float, end: float, transcript, anchors=None,
             if new_end < original_end:
                 adjustments.append("tog bort onödig tystnad i slutet")
         for unit in units:
-            if unit["start"] < new_start < unit["end"] and unit["start"] >= original_start and new_end - unit["start"] <= duration:
+            if unit["start"] < new_start < unit["end"] and unit["start"] >= max(0.0, original_start - 1.5) and new_end - unit["start"] <= duration + 1.5:
                 new_start = unit["start"]
                 adjustments.append("flyttade starten för att bevara tal")
                 break
         for unit in units:
-            if unit["start"] < new_end < unit["end"] and unit["end"] <= original_end and unit["end"] - new_start <= duration:
+            if unit["start"] < new_end < unit["end"] and unit["end"] <= original_end + 1.5 and unit["end"] - new_start <= duration + 1.5:
                 new_end = unit["end"]
                 adjustments.append("flyttade slutet för att bevara tal")
                 break
