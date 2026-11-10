@@ -427,18 +427,109 @@ def discover_youtube_videos(channels: str = "", limit: int = 5):
 
 
 @app.get("/api/sources/inbox")
+SOURCE_AUTHORIZATION_FILE = OUTPUTS / "source_authorizations.json"
+SOURCE_PERMISSION_BASES = {"owner", "written_permission", "license"}
+
+
+def normalize_source_authorization(rights_holder, permission_basis, source_url=""):
+    """Validate the provenance details recorded before a source can be processed."""
+    rights_holder = str(rights_holder or "").strip()
+    permission_basis = str(permission_basis or "").strip()
+    source_url = str(source_url or "").strip()
+    if not rights_holder or len(rights_holder) > 160:
+        raise ValueError("Ange vem som äger materialet eller har gett tillstånd (max 160 tecken).")
+    if permission_basis not in SOURCE_PERMISSION_BASES:
+        raise ValueError("Välj om materialet är ditt eget, har skriftligt tillstånd eller omfattas av en licens.")
+    if source_url:
+        parsed = urllib.parse.urlparse(source_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc or len(source_url) > 500:
+            raise ValueError("Källänken måste vara en giltig http- eller https-länk.")
+    return {
+        "rights_holder": rights_holder,
+        "permission_basis": permission_basis,
+        "source_url": source_url,
+        "confirmed_at": datetime.now(timezone.utc).isoformat()
+    }
+
+
+def load_source_authorizations():
+    try:
+        data = json.loads(SOURCE_AUTHORIZATION_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def save_source_authorizations(authorizations):
+    SOURCE_AUTHORIZATION_FILE.parent.mkdir(parents=True, exist_ok=True)
+    temporary = SOURCE_AUTHORIZATION_FILE.with_suffix(".tmp")
+    temporary.write_text(json.dumps(authorizations, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(SOURCE_AUTHORIZATION_FILE)
+
+
+def get_source_authorization(path, authorizations=None):
+    """Return a permission record only when it matches the file's current SHA-256."""
+    authorizations = load_source_authorizations() if authorizations is None else authorizations
+    try:
+        fingerprint = source_file_fingerprint(path)
+    except OSError:
+        return None
+    record = authorizations.get(fingerprint)
+    return record if isinstance(record, dict) else None
+
+
+@app.post("/api/sources/authorize")
+def authorize_source_file(
+    filename: str,
+    fingerprint: str,
+    rights_holder: str,
+    permission_basis: str,
+    source_url: str = "",
+    confirm: bool = False
+):
+    """Record the user's explicit rights confirmation for one exact inbox file."""
+    if not confirm:
+        raise HTTPException(400, "Bekräfta att du har rätt att bearbeta materialet.")
+    if not re.fullmatch(r"[A-Fa-f0-9]{64}", fingerprint):
+        raise HTTPException(400, "Ogiltigt filfingeravtryck.")
+    path = SOURCE_INBOX / filename
+    if path.parent.resolve() != SOURCE_INBOX.resolve() or not path.is_file() or path.suffix.lower() not in ALLOWED_SUFFIXES:
+        raise HTTPException(404, "Källfilen hittades inte.")
+    try:
+        if source_file_fingerprint(path) != fingerprint.lower():
+            raise HTTPException(409, "Filen har ändrats. Skanna om källmappen och godkänn den nya versionen.")
+        record = normalize_source_authorization(rights_holder, permission_basis, source_url)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    authorizations = load_source_authorizations()
+    authorizations[fingerprint.lower()] = {
+        "source_filename": path.name,
+        **record
+    }
+    save_source_authorizations(authorizations)
+    return {"authorized": True, "filename": path.name, "authorization": authorizations[fingerprint.lower()]}
+
+
 def list_source_inbox():
-    """List creator-authorized recordings placed in the local source_inbox folder."""
+    """List inbox recordings and whether this exact file version has rights approval."""
+    authorizations = load_source_authorizations()
     files = []
     for path in sorted(SOURCE_INBOX.iterdir()):
         if path.is_file() and path.suffix.lower() in ALLOWED_SUFFIXES:
             stat = path.stat()
-            files.append({"filename": path.name, "size_bytes": stat.st_size, "modified_at": int(stat.st_mtime)})
+            fingerprint = source_file_fingerprint(path)
+            authorization = authorizations.get(fingerprint)
+            files.append({
+                "filename": path.name, "size_bytes": stat.st_size,
+                "modified_at": int(stat.st_mtime), "fingerprint": fingerprint,
+                "authorized": isinstance(authorization, dict),
+                "authorization": authorization if isinstance(authorization, dict) else None
+            })
     return {
         "folder": str(SOURCE_INBOX),
         "files": files,
         "processed_folder": str(SOURCE_PROCESSED),
-        "note": "Lägg endast in egna inspelningar eller material du har tillstånd att bearbeta."
+        "note": "Endast filer med en uttrycklig rättighetsbekräftelse kan köas. Bekräftelsen gäller den exakta filversionen."
     }
 
 
@@ -487,10 +578,15 @@ def source_file_fingerprint(path):
     return digest.hexdigest()
 
 
-def queue_authorized_source_file(original, short_count=8, long_count=1):
-    """Copy one authorized source into uploads and start the normal render pipeline."""
+def queue_authorized_source_file(original, short_count=8, long_count=1, authorization=None):
+    """Copy one explicitly approved source into uploads and start the normal render pipeline."""
+    authorization = authorization or get_source_authorization(original)
+    if not isinstance(authorization, dict):
+        raise ValueError("Källfilen saknar rättighetsbekräftelse.")
     if not original.is_file() or original.suffix.lower() not in ALLOWED_SUFFIXES:
         raise ValueError("Ogiltig källfil.")
+    if get_source_authorization(original) is None:
+        raise ValueError("Källfilen har ändrats eller saknar aktuell rättighetsbekräftelse.")
     size = original.stat().st_size
     if size <= 0 or size > MAX_UPLOAD_BYTES:
         raise ValueError("Källfilen är tom eller större än 2 GB.")
@@ -515,6 +611,11 @@ def queue_authorized_source_file(original, short_count=8, long_count=1):
             "caption_mode": "word_by_word", "variants": 3,
             "source_filename": original.name,
             "source_ingestion": "authorized_local_inbox",
+            "source_rights_holder": authorization.get("rights_holder"),
+            "source_permission_basis": authorization.get("permission_basis"),
+            "source_url": authorization.get("source_url", ""),
+            "source_authorized_at": authorization.get("confirmed_at"),
+            "source_fingerprint": source_file_fingerprint(original),
             "created_at": datetime.now(timezone.utc).isoformat()
         }
         BATCH_JOBS[batch_id] = state
@@ -559,9 +660,12 @@ def source_watch_loop():
                     fingerprint = source_file_fingerprint(original)
                     if fingerprint in seen:
                         continue
+                    authorization = load_source_authorizations().get(fingerprint)
+                    if not isinstance(authorization, dict):
+                        continue
                     with SOURCE_WATCH_LOCK:
                         SOURCE_WATCH_STATE["active_file"] = original.name
-                    result = queue_authorized_source_file(original)
+                    result = queue_authorized_source_file(original, authorization=authorization)
                     SOURCE_PROCESSED.mkdir(exist_ok=True)
                     destination = SOURCE_PROCESSED / (original.name + "." + result["job_id"])
                     shutil.move(str(original), str(destination))
@@ -622,12 +726,14 @@ def process_source_inbox(background_tasks: BackgroundTasks, short_count: int = 8
         raise HTTPException(400, "Ogiltigt antal videor.")
     if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
         raise HTTPException(500, "Installera FFmpeg och FFprobe först.")
+    authorizations = load_source_authorizations()
     candidates = [
         path for path in sorted(SOURCE_INBOX.iterdir())
         if path.is_file() and path.suffix.lower() in ALLOWED_SUFFIXES
+        and isinstance(authorizations.get(source_file_fingerprint(path)), dict)
     ][:3]
     if not candidates:
-        raise HTTPException(404, "Källmappen är tom. Lägg egna eller godkända inspelningar i source_inbox.")
+        raise HTTPException(404, "Inga godkända filer hittades. Lägg till en video och bekräfta rättigheterna i källistan.")
     queued = []
     for original in candidates:
         if original.stat().st_size > MAX_UPLOAD_BYTES:
@@ -651,6 +757,12 @@ def process_source_inbox(background_tasks: BackgroundTasks, short_count: int = 8
                 "burn_subtitles": True, "subtitle_style": "classic",
                 "caption_mode": "word_by_word", "variants": 3,
                 "source_filename": original.name,
+                "source_ingestion": "authorized_local_inbox",
+                "source_rights_holder": authorizations[source_file_fingerprint(original)].get("rights_holder"),
+                "source_permission_basis": authorizations[source_file_fingerprint(original)].get("permission_basis"),
+                "source_url": authorizations[source_file_fingerprint(original)].get("source_url", ""),
+                "source_authorized_at": authorizations[source_file_fingerprint(original)].get("confirmed_at"),
+                "source_fingerprint": source_file_fingerprint(original),
                 "created_at": datetime.now(timezone.utc).isoformat()
             }
             BATCH_JOBS[batch_id] = state
