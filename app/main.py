@@ -2016,15 +2016,15 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     ai_review = {"status": "not_configured", "message": "Lägg till OPENAI_API_KEY på servern för AI-granskning"}
                 nearby_text = [
                     item["text"] for item in (transcript or [])
-                    if item["end"] >= candidate["start"] and item["start"] <= candidate["end"]
+                    if item["end"] >= candidate["start"] and item["start"] <= candidate_end
                 ]
-                edit_suggestions = suggest_edit_points(candidate["start"], candidate["end"], transcript, media_type)
-                hook_options = generate_hook_options(transcript, candidate["start"], candidate["end"])
+                edit_suggestions = suggest_edit_points(candidate["start"], candidate_end, transcript, media_type)
+                hook_options = generate_hook_options(transcript, candidate["start"], candidate_end)
                 highlights.append({
                     "type": media_type,
                     "number": index,
                     "start_seconds": round(candidate["start"], 2),
-                    "end_seconds": round(candidate["end"], 2),
+                    "end_seconds": round(candidate_end, 2),
                     "duration_seconds": round(candidate_duration, 2),
                     "boundaries_optimized": candidate.get("boundaries_optimized", False),
                     "boundary_adjustments": candidate.get("boundary_adjustments", []),
