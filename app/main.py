@@ -130,6 +130,167 @@ def write_clip_subtitles(job_id: str, clip_number: int, start: float, end: float
 
 app = FastAPI(title="AI Viral Video Clipper")
 
+# Microsoft Graph delegated device login (access token kept in memory only).
+ONEDRIVE_AUTH = {"device": None, "access_token": None, "expires_at": 0, "account": None}
+ONEDRIVE_LOCK = threading.RLock()
+ONEDRIVE_FOLDER = "AI Viral Video Clipper/Inbox"
+
+
+def onedrive_client_id():
+    return os.getenv("MICROSOFT_CLIENT_ID", "").strip()
+
+
+def onedrive_http_json(url, data=None, headers=None):
+    request = urllib.request.Request(url, data=data, headers=headers or {}, method="POST" if data is not None else "GET")
+    try:
+        with urllib.request.urlopen(request, timeout=25) as response:
+            raw = response.read()
+            return json.loads(raw.decode("utf-8")) if raw else {}
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = json.loads(exc.read().decode("utf-8"))
+        except Exception:
+            detail = {}
+        error = detail.get("error", "request_failed")
+        if error == "authorization_pending":
+            return {"error": error}
+        if error == "slow_down":
+            return {"error": error}
+        if error == "authorization_declined" or error == "expired_token":
+            return {"error": error}
+        raise HTTPException(502, "Microsoft Graph/Microsoft-inloggningen svarade med ett fel: " + str(error)) from exc
+    except Exception as exc:
+        raise HTTPException(502, "Kunde inte ansluta till Microsoft.") from exc
+
+
+@app.get("/api/onedrive/status")
+def onedrive_status():
+    with ONEDRIVE_LOCK:
+        connected = bool(ONEDRIVE_AUTH["access_token"] and ONEDRIVE_AUTH["expires_at"] > time.time() + 30)
+        return {"configured": bool(onedrive_client_id()), "connected": connected,
+                "account": ONEDRIVE_AUTH["account"], "folder": ONEDRIVE_FOLDER,
+                "note": "Delegated Files.Read. Access token lagras bara i minnet och försvinner vid omstart."}
+
+
+@app.post("/api/onedrive/connect/start")
+def onedrive_connect_start():
+    client_id = onedrive_client_id()
+    if not client_id:
+        raise HTTPException(503, "OneDrive kräver MICROSOFT_CLIENT_ID från en Microsoft Entra-appregistrering.")
+    payload = urllib.parse.urlencode({"client_id": client_id, "scope": "Files.Read User.Read"}).encode()
+    data = onedrive_http_json("https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode", data=payload,
+                              headers={"Content-Type": "application/x-www-form-urlencoded"})
+    with ONEDRIVE_LOCK:
+        ONEDRIVE_AUTH["device"] = {"device_code": data["device_code"],
+            "interval": int(data.get("interval", 5)), "expires_at": time.time() + int(data.get("expires_in", 900))}
+        ONEDRIVE_AUTH["access_token"] = None
+        ONEDRIVE_AUTH["account"] = None
+    return {"user_code": data["user_code"], "verification_uri": data.get("verification_uri", "https://microsoft.com/devicelogin"),
+            "message": data.get("message", "Öppna Microsofts inloggningssida och ange koden."),
+            "expires_in": int(data.get("expires_in", 900)), "interval": int(data.get("interval", 5))}
+
+
+@app.post("/api/onedrive/connect/poll")
+def onedrive_connect_poll():
+    client_id = onedrive_client_id()
+    with ONEDRIVE_LOCK:
+        device = ONEDRIVE_AUTH.get("device")
+    if not client_id or not device:
+        raise HTTPException(400, "Starta OneDrive-inloggningen först.")
+    if time.time() >= device["expires_at"]:
+        with ONEDRIVE_LOCK:
+            ONEDRIVE_AUTH["device"] = None
+        raise HTTPException(410, "Inloggningskoden har gått ut. Starta anslutningen igen.")
+    payload = urllib.parse.urlencode({"grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+        "client_id": client_id, "device_code": device["device_code"]}).encode()
+    data = onedrive_http_json("https://login.microsoftonline.com/consumers/oauth2/v2.0/token", data=payload,
+                              headers={"Content-Type": "application/x-www-form-urlencoded"})
+    if data.get("error") in {"authorization_pending", "slow_down"}:
+        return {"connected": False, "pending": True, "interval": device["interval"] + (5 if data.get("error") == "slow_down" else 0)}
+    if data.get("error"):
+        with ONEDRIVE_LOCK:
+            ONEDRIVE_AUTH["device"] = None
+        raise HTTPException(401, "Microsoft-inloggningen avbröts eller koden gick ut.")
+    token = data.get("access_token")
+    if not token:
+        raise HTTPException(502, "Microsoft returnerade ingen åtkomsttoken.")
+    with ONEDRIVE_LOCK:
+        ONEDRIVE_AUTH.update({"device": None, "access_token": token,
+            "expires_at": time.time() + int(data.get("expires_in", 3600)), "account": data.get("id_token_claims", {}).get("preferred_username")})
+    return {"connected": True, "account": ONEDRIVE_AUTH["account"]}
+
+
+def onedrive_token():
+    with ONEDRIVE_LOCK:
+        token = ONEDRIVE_AUTH.get("access_token")
+        expires = ONEDRIVE_AUTH.get("expires_at", 0)
+    if not token or expires <= time.time() + 30:
+        raise HTTPException(401, "OneDrive är inte anslutet eller inloggningen har gått ut. Anslut igen.")
+    return token
+
+
+def graph_json(url, token):
+    return onedrive_http_json(url, headers={"Authorization": "Bearer " + token})
+
+
+@app.get("/api/onedrive/files")
+def onedrive_list_files():
+    token = onedrive_token()
+    folder_path = urllib.parse.quote(ONEDRIVE_FOLDER, safe="/")
+    url = "https://graph.microsoft.com/v1.0/me/drive/root:/" + folder_path + ":/children?$select=id,name,size,file,folder,lastModifiedDateTime&$top=100"
+    data = graph_json(url, token)
+    files = []
+    for item in data.get("value", []):
+        name = str(item.get("name", ""))
+        if item.get("file") and Path(name).suffix.lower() in ALLOWED_SUFFIXES:
+            files.append({"id": item.get("id"), "name": name, "size_bytes": int(item.get("size", 0)),
+                          "modified_at": item.get("lastModifiedDateTime")})
+    return {"folder": ONEDRIVE_FOLDER, "files": files, "note": "Endast metadata visas här. Välj uttryckligen vilka filer som ska hämtas; rättighetsbekräftelse krävs efter nedladdning."}
+
+
+@app.post("/api/onedrive/download/{item_id}")
+def onedrive_download_file(item_id: str):
+    if not re.fullmatch(r"[A-Za-z0-9!._-]{1,256}", item_id):
+        raise HTTPException(400, "Ogiltigt OneDrive-fil-ID.")
+    token = onedrive_token()
+    metadata = graph_json("https://graph.microsoft.com/v1.0/me/drive/items/" + urllib.parse.quote(item_id, safe="") + "?$select=id,name,size,file", token)
+    filename = Path(str(metadata.get("name", "video.mp4"))).name
+    suffix = Path(filename).suffix.lower()
+    size = int(metadata.get("size", 0))
+    if not metadata.get("file") or suffix not in ALLOWED_SUFFIXES or size <= 0 or size > MAX_UPLOAD_BYTES:
+        raise HTTPException(400, "Filen är inte en tillåten videofil eller är större än 2 GB.")
+    ensure_upload_space(size)
+    download_url = "https://graph.microsoft.com/v1.0/me/drive/items/" + urllib.parse.quote(item_id, safe="") + "/content"
+    request = urllib.request.Request(download_url, headers={"Authorization": "Bearer " + token})
+    target = SOURCE_INBOX / (uuid.uuid4().hex[:8] + "_" + re.sub(r"[^A-Za-z0-9._ -]", "_", filename))
+    written = 0
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response, target.open("wb") as output:
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > MAX_UPLOAD_BYTES:
+                    raise HTTPException(413, "Videon överskred gränsen på 2 GB.")
+                ensure_upload_space(len(chunk))
+                output.write(chunk)
+        if written == 0:
+            raise HTTPException(400, "Den hämtade filen var tom.")
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
+    return {"downloaded": True, "filename": target.name, "size_bytes": written,
+            "requires_rights_approval": True, "auto_queued": False}
+
+
+@app.post("/api/onedrive/disconnect")
+def onedrive_disconnect():
+    with ONEDRIVE_LOCK:
+        ONEDRIVE_AUTH.update({"device": None, "access_token": None, "expires_at": 0, "account": None})
+    return {"connected": False}
+
+
 def write_batch_subtitles(batch_id: str, media_type: str, clip_number: int,
                           start: float, end: float, transcript):
     """Create a clip-local SRT file for optional burned-in captions."""
