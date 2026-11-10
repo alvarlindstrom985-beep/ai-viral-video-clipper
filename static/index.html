@@ -143,6 +143,7 @@
     <label class="field">Twitch-kanaler
       <input id="twitchChannels" type="text" placeholder="exempel: xqc, kai_cenat, your_channel" style="width:100%;max-width:650px">
     </label>
+    <button id="saveTwitch" type="button">Spara kanallista</button>
     <button id="watchTwitch" type="button">Starta livebevakning</button>
     <button id="stopTwitch" type="button" disabled>Stoppa bevakning</button>
     <p id="twitchStatus" class="muted">Inte aktiv. Kräver Twitch API-uppgifter på servern.</p>
@@ -321,9 +322,37 @@ discoverYoutubeButton.addEventListener('click',discoverYoutube);
 scanInboxButton.addEventListener('click',scanSourceInbox);
 processInboxButton.addEventListener('click',processSourceInbox);
 const twitchInput=document.querySelector('#twitchChannels');
+const saveTwitchButton=document.querySelector('#saveTwitch');
 const watchButton=document.querySelector('#watchTwitch'), stopButton=document.querySelector('#stopTwitch');
 const twitchStatus=document.querySelector('#twitchStatus'), twitchResults=document.querySelector('#twitchResults');
+const TWITCH_CHANNELS_STORAGE_KEY='clipper_twitch_channels_v1';
 let twitchTimer=null;
+function savedTwitchChannels(){
+  try{return localStorage.getItem(TWITCH_CHANNELS_STORAGE_KEY)||''}catch(error){return ''}
+}
+function saveTwitchChannels(){
+  const channels=twitchInput.value.trim();
+  const names=[...new Set(channels.split(',').map(name=>name.trim().toLowerCase().replace(/^@/, '')).filter(Boolean))];
+  if(!names.length||names.length>20||names.some(name=>!/^[a-z0-9_]{1,25}$/.test(name))){
+    twitchStatus.textContent='Ange 1–20 giltiga Twitch-kanalnamn, separerade med kommatecken.';
+    return false;
+  }
+  const normalized=names.join(', ');
+  twitchInput.value=normalized;
+  try{localStorage.setItem(TWITCH_CHANNELS_STORAGE_KEY,normalized)}catch(error){
+    twitchStatus.textContent='Kanallistan kunde inte sparas i webbläsaren.';
+    return false;
+  }
+  twitchStatus.textContent='Kanallistan är sparad. Bevakningen kan starta automatiskt nästa gång dashboarden öppnas.';
+  return true;
+}
+async function startTwitchWatch(){
+  if(twitchTimer)clearInterval(twitchTimer);
+  await checkTwitch();
+  twitchTimer=setInterval(checkTwitch,60000);
+  watchButton.disabled=true;stopButton.disabled=false;
+}
+saveTwitchButton.addEventListener('click',saveTwitchChannels);
 async function checkTwitch(){
   const channels=twitchInput.value.trim();
   if(!channels){twitchStatus.textContent='Skriv minst ett kanalnamn.';return}
@@ -352,16 +381,18 @@ async function checkTwitch(){
   }catch(error){twitchStatus.textContent=error.message}
 }
 watchButton.addEventListener('click',async()=>{
-  if(twitchTimer)clearInterval(twitchTimer);
-  await checkTwitch();
-  twitchTimer=setInterval(checkTwitch,60000);
-  watchButton.disabled=true;stopButton.disabled=false;
+  if(saveTwitchChannels())await startTwitchWatch();
 });
 stopButton.addEventListener('click',()=>{
   if(twitchTimer)clearInterval(twitchTimer);
   twitchTimer=null;watchButton.disabled=false;stopButton.disabled=true;
-  twitchStatus.textContent='Livebevakningen är stoppad.';
+  twitchStatus.textContent='Livebevakningen är stoppad. Den sparade kanallistan finns kvar.';
 });
+const restoredTwitchChannels=savedTwitchChannels();
+if(restoredTwitchChannels){
+  twitchInput.value=restoredTwitchChannels;
+  startTwitchWatch();
+}
 const statusEl=document.querySelector('#status'), resultsEl=document.querySelector('#results');
 const progress=document.querySelector('#progress'), progressText=document.querySelector('#progressText'), zipLink=document.querySelector('#zip');
 function addSection(title,items){
