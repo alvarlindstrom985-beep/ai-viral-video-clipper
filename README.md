@@ -115,7 +115,7 @@ The dashboard can check up to 20 Twitch channel logins using Twitch's official H
 - `TWITCH_CLIENT_ID`
 - `TWITCH_CLIENT_SECRET`
 
-The browser refreshes live status every 60 seconds while the dashboard is open and monitoring is enabled. This is browser-session monitoring, not a persistent 24/7 background service. The integration only displays live status, stream title, game, viewer count, and a link to the channel. It does not join chats, record, download, or clip other creators' streams. Use only source recordings/VODs you own or have permission to process. Keep the client secret on the server; never put it in frontend code.
+The browser refreshes live status every 60 seconds while the dashboard is open and monitoring is enabled. The channel list can be saved in that browser and monitoring resumes automatically when the dashboard is opened again. This is still browser-session monitoring, not a persistent 24/7 background service; the dashboard must remain open for polling to continue. The integration only displays live status, stream title, game, viewer count, and a link to the channel. It does not join chats, record, download, or clip other creators' streams. Use only source recordings/VODs you own or have permission to process. Keep the client secret on the server; never put it in frontend code.
 
 
 ## Word-by-word karaoke captions
