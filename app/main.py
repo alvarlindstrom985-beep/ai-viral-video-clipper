@@ -1463,6 +1463,48 @@ def storyline_arc_quality(start: float, end: float, transcript, anchors=None):
     return best
 
 
+def reaction_event_context(transcript, start: float, end: float, max_gap: float = 8.0):
+    """Link a streamer reaction to a nearby preceding GTA event in timestamped speech."""
+    if not transcript:
+        return {"score": 0.0, "linked": False, "event_text": None, "reaction_text": None, "gap_seconds": None}
+    events = []
+    reactions = []
+    for item in transcript:
+        if not isinstance(item, dict) or "start" not in item or "end" not in item:
+            continue
+        text = str(item.get("text", "")).lower()
+        if not text:
+            continue
+        if any(phrase in text for phrase in GAME_EVENT_PHRASES):
+            events.append(item)
+        has_reaction = (
+            any(phrase.lower() in text for phrase in STREAMER_FUNNY_PHRASES)
+            or any(phrase.lower() in text for phrase in STREAMER_REACTION_PHRASES)
+            or any(phrase in text for phrase in RAGE_PHRASES)
+            or bool(LAUGHTER_PATTERN.search(text))
+        )
+        if has_reaction:
+            reactions.append(item)
+    best = None
+    for reaction in reactions:
+        for event in events:
+            gap = float(reaction["start"]) - float(event["end"])
+            if -0.5 <= gap <= max_gap:
+                candidate = (max(0.0, gap), event, reaction)
+                if best is None or candidate[0] < best[0]:
+                    best = candidate
+    if best is None:
+        return {"score": 0.0, "linked": False, "event_text": None, "reaction_text": None, "gap_seconds": None}
+    gap, event, reaction = best
+    return {
+        "score": 5.0 if gap <= max_gap else 0.0,
+        "linked": True,
+        "event_text": str(event.get("text", ""))[:160],
+        "reaction_text": str(reaction.get("text", ""))[:160],
+        "gap_seconds": round(gap, 2)
+    }
+
+
 def context_aware_reaction_score(funny_hits, reaction_hits, laughter_hits,
                                   rage_hits, visual_score, game_hits):
     """Prioritize observable streamer reactions; gameplay phrases only add context."""
@@ -1541,6 +1583,7 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
             funny_hits, reaction_hits, laughter_hits, rage_hits,
             visual["visual_score"], game_hits
         )
+        reaction_context = reaction_event_context(words, start, end)
         # Gameplay is supporting context only; its contribution is deliberately capped.
         game_score = min(len(game_hits) * 1.5, 4.5)
         speech_score = min(speech_density * 25, 18)
@@ -1550,6 +1593,7 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
             + audio_score_points + visual["visual_score"]
             + reaction_priority["priority_score"]
             + reaction_priority["reaction_focus_adjustment"]
+            + reaction_context["score"]
         )
 
         categories = []
@@ -1675,6 +1719,11 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
             "reaction_priority_score": reaction_priority["priority_score"],
             "gameplay_context_score": reaction_priority["gameplay_context_score"],
             "reaction_focus_adjustment": reaction_priority["reaction_focus_adjustment"],
+            "reaction_context_linked": reaction_context["linked"],
+            "reaction_context_score": reaction_context["score"],
+            "reaction_context_event": reaction_context["event_text"],
+            "reaction_context_text": reaction_context["reaction_text"],
+            "reaction_context_gap_seconds": reaction_context["gap_seconds"],
             "has_clear_streamer_reaction": reaction_priority["has_clear_reaction"],
             "rage_score": round(rage_score, 2),
             "rage_phrases": rage_hits,
