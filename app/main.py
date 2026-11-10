@@ -2905,7 +2905,11 @@ def list_recent_batch_jobs():
             "created_at": state.get("created_at"),
             "updated_at": state.get("updated_at"),
             "can_resume": state.get("status") in {"interrupted", "failed"},
-            "created": state.get("created")
+            "created": state.get("created"),
+            "source_filename": state.get("source_filename"),
+            "source_rights_holder": state.get("source_rights_holder"),
+            "source_permission_basis": state.get("source_permission_basis"),
+            "source_url": state.get("source_url")
         })
     items.sort(key=lambda item: item.get("updated_at") or item.get("created_at") or "", reverse=True)
     return {"jobs": items[:20]}
