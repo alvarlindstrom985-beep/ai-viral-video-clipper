@@ -492,7 +492,7 @@ def authorize_source_file(
     if not re.fullmatch(r"[A-Fa-f0-9]{64}", fingerprint):
         raise HTTPException(400, "Ogiltigt filfingeravtryck.")
     path = SOURCE_INBOX / filename
-    if path.parent.resolve() != SOURCE_INBOX.resolve() or not path.is_file() or path.suffix.lower() not in ALLOWED_SUFFIXES:
+    if path.is_symlink() or path.resolve().parent != SOURCE_INBOX.resolve() or not path.is_file() or path.suffix.lower() not in ALLOWED_SUFFIXES:
         raise HTTPException(404, "Källfilen hittades inte.")
     try:
         if source_file_fingerprint(path) != fingerprint.lower():
@@ -515,7 +515,7 @@ def list_source_inbox():
     authorizations = load_source_authorizations()
     files = []
     for path in sorted(SOURCE_INBOX.iterdir()):
-        if path.is_file() and path.suffix.lower() in ALLOWED_SUFFIXES:
+        if path.is_file() and not path.is_symlink() and path.resolve().parent == SOURCE_INBOX.resolve() and path.suffix.lower() in ALLOWED_SUFFIXES:
             stat = path.stat()
             fingerprint = source_file_fingerprint(path)
             authorization = authorizations.get(fingerprint)
@@ -648,7 +648,9 @@ def source_watch_loop():
                 continue
             files = sorted(
                 path for path in SOURCE_INBOX.iterdir()
-                if path.is_file() and path.suffix.lower() in ALLOWED_SUFFIXES
+                if path.is_file() and not path.is_symlink()
+                and path.resolve().parent == SOURCE_INBOX.resolve()
+                and path.suffix.lower() in ALLOWED_SUFFIXES
             )
             for original in files:
                 if SOURCE_WATCH_STOP.is_set():
@@ -729,7 +731,9 @@ def process_source_inbox(background_tasks: BackgroundTasks, short_count: int = 8
     authorizations = load_source_authorizations()
     candidates = [
         path for path in sorted(SOURCE_INBOX.iterdir())
-        if path.is_file() and path.suffix.lower() in ALLOWED_SUFFIXES
+        if path.is_file() and not path.is_symlink()
+        and path.resolve().parent == SOURCE_INBOX.resolve()
+        and path.suffix.lower() in ALLOWED_SUFFIXES
         and isinstance(authorizations.get(source_file_fingerprint(path)), dict)
     ][:3]
     if not candidates:
