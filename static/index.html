@@ -112,6 +112,19 @@
     </form>
     <p id="metadataStatus" class="muted">Redo att skapa förslag.</p>
     <div id="metadataResults" class="clips"></div>
+    <h2 class="group-title">Automatisk källbevakning</h2>
+    <p class="muted">Hitta nya offentliga YouTube-uppladdningar via kanalernas RSS-flöden. För själva klippningen använder appen en lokal källmapp med egna inspelningar eller material du har tillstånd att bearbeta.</p>
+    <label class="field">YouTube-kanal-ID:n (UC...; separera med kommatecken)
+      <input id="youtubeChannels" type="text" placeholder="UCxxxxxxxxxxxxxxxxxxxxxx" style="width:100%;max-width:650px">
+    </label>
+    <div class="settings">
+      <button id="discoverYoutube" type="button">Hitta nya YouTube-videor</button>
+      <button id="scanInbox" type="button">Kontrollera källmappen</button>
+      <button id="processInbox" type="button">Clippa material i källmappen</button>
+    </div>
+    <p id="sourceStatus" class="muted">Redo. YouTube-bevakningen hittar metadata och länkar, inte videofiler.</p>
+    <div id="sourceResults" class="clips"></div>
+    <p class="notice">Lokal källmapp: <code>source_inbox/</code> i projektmappen. Lägg där egna inspelningar eller filer som kreatören uttryckligen har gett tillstånd att använda. När du startar klippningen köas upp till 3 filer åt gången, och originalen flyttas till <code>source_inbox/processed/</code>. Ingen automatisk publicering sker.</p>
     <h2 class="group-title">Twitch – bevaka lives</h2>
     <p class="muted">Skriv Twitch-kanaler med kommatecken. Modellen kontrollerar vilka som är live via Twitchs officiella API.</p>
     <label class="field">Twitch-kanaler
@@ -127,6 +140,58 @@
 <script>
 const fileInput=document.querySelector('#video'), button=document.querySelector('#run');
 
+const youtubeInput=document.querySelector('#youtubeChannels');
+const discoverYoutubeButton=document.querySelector('#discoverYoutube');
+const scanInboxButton=document.querySelector('#scanInbox');
+const processInboxButton=document.querySelector('#processInbox');
+const sourceStatus=document.querySelector('#sourceStatus');
+const sourceResults=document.querySelector('#sourceResults');
+async function discoverYoutube(){
+  const channels=youtubeInput.value.trim();
+  if(!channels){sourceStatus.textContent='Ange minst ett YouTube-kanal-ID.';return}
+  sourceStatus.textContent='Letar efter offentliga uppladdningar...';
+  try{
+    const response=await fetch('/api/sources/youtube?channels='+encodeURIComponent(channels));
+    const data=await response.json();if(!response.ok)throw new Error(data.detail||'YouTube-bevakningen misslyckades');
+    sourceResults.innerHTML='';
+    data.videos.forEach(item=>{
+      const card=document.createElement('article');card.className='clip';
+      const title=document.createElement('h3');title.textContent=item.title;
+      const meta=document.createElement('p');meta.className='muted';meta.textContent=item.published_at+' · '+item.channel_id;
+      const link=document.createElement('a');link.href=item.url;link.target='_blank';link.rel='noopener noreferrer';link.className='download';link.textContent='Öppna videon';
+      card.append(title,meta,link);sourceResults.append(card);
+    });
+    sourceStatus.textContent=data.videos.length+' videor hittades. '+(data.errors.length?data.errors.length+' kanalflöden kunde inte läsas. ':'')+data.media_access_note;
+  }catch(error){sourceStatus.textContent=error.message}
+}
+async function scanSourceInbox(){
+  sourceStatus.textContent='Kontrollerar den lokala källmappen...';
+  try{
+    const response=await fetch('/api/sources/inbox');const data=await response.json();
+    if(!response.ok)throw new Error(data.detail||'Kunde inte läsa källmappen');
+    sourceResults.innerHTML='';
+    data.files.forEach(file=>{
+      const card=document.createElement('article');card.className='clip';
+      const name=document.createElement('strong');name.textContent=file.filename;
+      const size=document.createElement('p');size.className='muted';size.textContent=(file.size_bytes/1024/1024).toFixed(1)+' MB';
+      card.append(name,size);sourceResults.append(card);
+    });
+    sourceStatus.textContent=data.files.length+' videofiler hittades i '+data.folder+'.';
+  }catch(error){sourceStatus.textContent=error.message}
+}
+async function processSourceInbox(){
+  processInboxButton.disabled=true;sourceStatus.textContent='Köar klippjobb från källmappen...';
+  try{
+    const response=await fetch('/api/sources/inbox/process',{method:'POST'});
+    const data=await response.json();if(!response.ok)throw new Error(data.detail||'Kunde inte starta klippningen');
+    sourceStatus.textContent=data.count+' källvideor har köats. Batchjobben syns under Senaste batchjobb.';
+    await scanSourceInbox();
+  }catch(error){sourceStatus.textContent=error.message}
+  finally{processInboxButton.disabled=false}
+}
+discoverYoutubeButton.addEventListener('click',discoverYoutube);
+scanInboxButton.addEventListener('click',scanSourceInbox);
+processInboxButton.addEventListener('click',processSourceInbox);
 const twitchInput=document.querySelector('#twitchChannels');
 const watchButton=document.querySelector('#watchTwitch'), stopButton=document.querySelector('#stopTwitch');
 const twitchStatus=document.querySelector('#twitchStatus'), twitchResults=document.querySelector('#twitchResults');
