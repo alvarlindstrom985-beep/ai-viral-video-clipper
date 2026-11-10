@@ -82,6 +82,14 @@ Run a batch by uploading a source video in the dashboard. The API endpoint is `P
 This is an early MVP, not a trained viral prediction model. It does not visually understand GTA gameplay or reliably detect specific events such as kills, crashes, or mission completions. It creates separate SRT subtitle files when speech transcription is available and can burn captions into the video when enabled and supported by FFmpeg. Streamer-humor and visual signals are heuristics, not true emotion recognition; sarcasm, facial expressions, webcam layout, visual jokes, and context can be missed. Scores should be reviewed before posting. Only upload videos you own or have permission to use.
 
 
+## Automatic source discovery and authorized inbox
+
+The dashboard can query public YouTube channel RSS feeds for newly published video metadata (title, publication time, and link). Enter channel IDs in the form `UC...`; the discovery endpoint does not download video files or bypass YouTube access controls.
+
+For automatic clip generation without using the browser upload form, place source recordings in the project's local `source_inbox/` folder. Only recordings you own or have explicit permission to process should be placed there. The dashboard can scan that folder and queue up to three videos per action using the normal batch pipeline (8 Shorts and 1 longer video by default, three edit variants, manual review only). Successfully queued originals are moved to `source_inbox/processed/`. The files are copied into the normal uploads area before rendering, so keep persistent storage and monitor disk space.
+
+This is a first source-ingestion step, not a fully autonomous platform downloader: YouTube RSS provides discovery metadata only, and Twitch live monitoring provides live status only. Neither integration records or downloads other creators' streams/VODs. To process platform footage, use creator-owned exports or a source explicitly provided for clipping. The local inbox currently requires the recording to be placed in the folder; continuous unattended recording or downloading is not implemented.
+
 ## Twitch live monitoring (read-only)
 
 The dashboard can check up to 20 Twitch channel logins using Twitch's official Helix API. Configure these server environment variables using a Twitch developer application:
