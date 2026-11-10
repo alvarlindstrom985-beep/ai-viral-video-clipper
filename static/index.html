@@ -294,7 +294,7 @@ oneDriveList.addEventListener('click',async()=>{
   try{
     const data=await oneDriveRequest('/api/onedrive/files');
     if(!data.files.length){oneDriveStatus.textContent='Inga videofiler hittades i OneDrive/'+data.folder+'. Skapa mappen och lägg till videor.';return}
-    oneDriveStatus.textContent=data.files.length+' videofiler hittades i OneDrive/'+data.folder+'.';
+    oneDriveStatus.textContent=data.files.length+' videofiler hittades i OneDrive/'+data.folder+'.'+(data.has_more_pages?' Visar högst 1000 videor – flytta äldre filer till en undermapp om du behöver hitta fler.':'');
     data.files.forEach(file=>{
       const card=document.createElement('article');card.className='clip';
       const title=document.createElement('strong');title.textContent=file.name;
