@@ -90,6 +90,12 @@ For automatic clip generation without using the browser upload form, place sourc
 
 This is a first source-ingestion step, not a fully autonomous platform downloader: YouTube RSS provides discovery metadata only, and Twitch live monitoring provides live status only. Neither integration records or downloads other creators' streams/VODs. To process platform footage, use creator-owned exports or a source explicitly provided for clipping. The local inbox currently requires the recording to be placed in the folder; continuous unattended recording or downloading is not implemented.
 
+### Automatic local source watcher
+
+The dashboard can start and stop a background watcher for the authorized `source_inbox/` folder. While enabled, it checks every 15 seconds for supported video files and waits until a file is at least 30 seconds old before processing, reducing the chance of reading a file while it is still being copied or synced. Each file is fingerprinted with SHA-256 and recorded in `outputs/source_watch_seen.json` to avoid re-queuing the same content after a restart. Successfully queued originals are moved into `source_inbox/processed/`; each recording is copied to the normal uploads folder and sent through the existing batch renderer. The watcher processes one source at a time and uses the standard defaults (8 Shorts, 1 long video, three variants).
+
+This makes folder-based intake automatic once a recording appears in the folder (for example through a creator-authorized desktop cloud-sync folder). It does **not** open YouTube/Twitch watch pages to extract video streams, download third-party VODs, or record live broadcasts. Public YouTube RSS and Twitch Helix integrations remain discovery/status-only. The watcher is process-local and must be started from the dashboard after each server restart; keep the server running and use a single application process. Only ingest content you own or have explicit permission to process.
+
 ## Twitch live monitoring (read-only)
 
 The dashboard can check up to 20 Twitch channel logins using Twitch's official Helix API. Configure these server environment variables using a Twitch developer application:
