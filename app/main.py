@@ -1463,14 +1463,20 @@ def storyline_arc_quality(start: float, end: float, transcript, anchors=None):
     return best
 
 
-def reaction_event_context(transcript, start: float, end: float, max_gap: float = 8.0):
-    """Link a streamer reaction to a nearby preceding GTA event in timestamped speech."""
+def reaction_event_context(transcript, start: float, end: float, max_gap: float = 8.0, anchors=None):
+    """Link a streamer reaction to nearby spoken or audiovisual event cues."""
+    empty = {
+        "score": 0.0, "linked": False, "event_text": None,
+        "reaction_text": None, "gap_seconds": None, "evidence": None
+    }
     if not transcript:
-        return {"score": 0.0, "linked": False, "event_text": None, "reaction_text": None, "gap_seconds": None}
+        transcript = []
     events = []
     reactions = []
     for item in transcript:
         if not isinstance(item, dict) or "start" not in item or "end" not in item:
+            continue
+        if float(item["end"]) <= start or float(item["start"]) >= end:
             continue
         text = str(item.get("text", "")).lower()
         if not text:
@@ -1488,20 +1494,35 @@ def reaction_event_context(transcript, start: float, end: float, max_gap: float 
     best = None
     for reaction in reactions:
         for event in events:
-            gap = float(reaction["start"]) - float(event["end"])
-            if -0.5 <= gap <= max_gap:
-                candidate = (max(0.0, gap), event, reaction)
+            # A single utterance may mention the event and the reaction together.
+            gap = max(0.0, float(reaction["start"]) - float(event["end"]))
+            if gap <= max_gap:
+                candidate = (gap, 5.0, event, reaction, "tal")
                 if best is None or candidate[0] < best[0]:
                     best = candidate
+        # A nearby audio peak or smile sample can support context when the event
+        # itself is not spoken. These cues are weaker and never replace reaction evidence.
+        reaction_time = (float(reaction["start"]) + float(reaction["end"])) / 2
+        for anchor in anchors or []:
+            if anchor.get("kind") not in {"audio", "visual"}:
+                continue
+            event_time = float(anchor.get("time", -999))
+            gap = float(reaction["start"]) - event_time
+            if 0.0 <= gap <= min(max_gap, 3.0):
+                score = 2.0 if anchor["kind"] == "audio" else 1.0
+                candidate = (gap, score, {"text": anchor["kind"] + "signal"}, reaction, anchor["kind"])
+                if best is None or candidate[1] > best[1] or (candidate[1] == best[1] and candidate[0] < best[0]):
+                    best = candidate
     if best is None:
-        return {"score": 0.0, "linked": False, "event_text": None, "reaction_text": None, "gap_seconds": None}
-    gap, event, reaction = best
+        return empty
+    gap, score, event, reaction, evidence = best
     return {
-        "score": 5.0 if gap <= max_gap else 0.0,
+        "score": score,
         "linked": True,
         "event_text": str(event.get("text", ""))[:160],
         "reaction_text": str(reaction.get("text", ""))[:160],
-        "gap_seconds": round(gap, 2)
+        "gap_seconds": round(gap, 2),
+        "evidence": evidence
     }
 
 
@@ -1583,7 +1604,7 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
             funny_hits, reaction_hits, laughter_hits, rage_hits,
             visual["visual_score"], game_hits
         )
-        reaction_context = reaction_event_context(words, start, end)
+        reaction_context = reaction_event_context(words, start, end, anchors=anchors)
         # Gameplay is supporting context only; its contribution is deliberately capped.
         game_score = min(len(game_hits) * 1.5, 4.5)
         speech_score = min(speech_density * 25, 18)
@@ -1724,6 +1745,7 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
             "reaction_context_event": reaction_context["event_text"],
             "reaction_context_text": reaction_context["reaction_text"],
             "reaction_context_gap_seconds": reaction_context["gap_seconds"],
+            "reaction_context_evidence": reaction_context["evidence"],
             "has_clear_streamer_reaction": reaction_priority["has_clear_reaction"],
             "rage_score": round(rage_score, 2),
             "rage_phrases": rage_hits,
