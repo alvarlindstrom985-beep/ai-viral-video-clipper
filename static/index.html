@@ -221,6 +221,7 @@ async function pollBatch(batchId){
         label.textContent=(moment.type==='short'?'Short':'Längre video')+' #'+moment.number;
         const timing=document.createElement('p');
         timing.textContent=moment.start_seconds+'s – '+moment.end_seconds+'s';
+         const boundaryOptimization=document.createElement('p');boundaryOptimization.className='muted';boundaryOptimization.textContent='Automatisk klipplängd: '+(moment.duration_seconds??(moment.end_seconds-moment.start_seconds)).toFixed(1)+'s'+((moment.boundary_adjustments||[]).length?' · '+moment.boundary_adjustments.join(' · '):' · inga säkra gränsjusteringar');
         const score=document.createElement('p');score.className='score';score.textContent='Urvalspoäng: '+moment.score;
         const selection=document.createElement('p');selection.className='muted';selection.textContent=(moment.selection_reason||'Vald efter grundpoäng')+(moment.selection_diversity_adjustment>0?' · variationsjustering −'+moment.selection_diversity_adjustment:'');
         const rage=document.createElement('p');rage.className='pill';rage.textContent='Rage-signal: '+(moment.rage_score||0)+' poäng';
@@ -252,7 +253,7 @@ async function pollBatch(batchId){
         const ragePhrases=document.createElement('p');ragePhrases.className='muted';ragePhrases.textContent=(moment.rage_phrases||[]).length?'Uppfattade uttryck: '+moment.rage_phrases.join(', '):'Ingen tydlig rage-fras hittades';
         const reason=document.createElement('p');reason.className='muted';reason.textContent=moment.reason;
         const excerpt=document.createElement('p');excerpt.className='muted';excerpt.textContent=moment.transcript_excerpt||'Inget transkript tillgängligt.';
-        card.append(label,timing,score,selection,retention,retentionReasons,aiReviewScore,aiSubscores,aiReviewDetails,hookTitle,hookList,editTitle,editTiming,editNotes,hook,pacing,diversity,payoff,payoffTiming,boundary,storyline,rage,learning,ragePhrases,reason,excerpt);highlightGrid.append(card);
+        card.append(label,timing,boundaryOptimization,score,selection,retention,retentionReasons,aiReviewScore,aiSubscores,aiReviewDetails,hookTitle,hookList,editTitle,editTiming,editNotes,hook,pacing,diversity,payoff,payoffTiming,boundary,storyline,rage,learning,ragePhrases,reason,excerpt);highlightGrid.append(card);
       });
       resultsEl.insertBefore(highlightGrid,report);
       let summary='Klart! '+state.created.files+' filer klarade teknisk kvalitetskontroll. '+(state.quality_rejected||0)+' exporter underkändes och togs bort. Allt är redo för manuell granskning före publicering.';
