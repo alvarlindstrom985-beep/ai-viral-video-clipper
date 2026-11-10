@@ -1971,10 +1971,11 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
             ("long", long_candidates, min(float(long_length), duration))
         ):
             for index, candidate in enumerate(candidates, 1):
+                candidate_duration = max(5.0, candidate["end"] - candidate["start"])
                 if os.getenv("OPENAI_API_KEY", "").strip() and ai_review_count < ai_review_limit:
                     state["stage"] = f"AI-granskar {media_type} {index}"
                     ai_review = review_clip_with_ai(
-                        source, candidate["start"], candidate["start"] + clip_duration, transcript
+                        source, candidate["start"], candidate["end"], transcript
                     )
                     ai_review_count += 1
                 elif os.getenv("OPENAI_API_KEY", "").strip():
@@ -2041,6 +2042,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
         quality_checks = []
         for media_type, candidates, clip_duration in groups:
             for clip_index, candidate in enumerate(candidates, 1):
+                candidate_duration = max(5.0, candidate["end"] - candidate["start"])
                 for recipe in recipes:
                     filename = f"{job_id}_{media_type}_{clip_index:02d}_{recipe['id']}.mp4"
                     out = OUTPUTS / filename
@@ -2053,7 +2055,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                         # Keep a conventional SRT sidecar for editing/accessibility in every mode.
                         write_batch_subtitles(
                             batch_id, media_type, clip_index, candidate["start"],
-                            candidate["start"] + clip_duration, transcript
+                            candidate["end"], transcript
                         )
                         if caption_mode == "word_by_word":
                             subtitle_path = write_word_karaoke_ass(
@@ -2075,13 +2077,13 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                     if hook_index < len(hook_list):
                         hook_ass_path = write_hook_overlay_ass(
                             batch_id, media_type, clip_index, recipe["id"],
-                            hook_list[hook_index], clip_duration
+                            hook_list[hook_index], candidate_duration
                         )
                     if hook_ass_path:
                         video_filter += "," + ffmpeg_ass_filter(hook_ass_path)
                     command = [
                         "ffmpeg", "-y", "-ss", str(candidate["start"]), "-i", str(source),
-                        "-t", str(clip_duration), "-vf", video_filter,
+                        "-t", str(candidate_duration), "-vf", video_filter,
                         "-c:v", "libx264", "-preset", "veryfast", "-crf", "23"
                     ]
                     if recipe["audio_filter"]:
@@ -2095,7 +2097,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                         state["last_error"] = (rendered.stderr or "FFmpeg error")[-500:]
                         continue
                     expected_width, expected_height = (1080, 1920) if media_type == "short" else (1920, 1080)
-                    quality = inspect_render_quality(out, clip_duration, expected_width, expected_height)
+                    quality = inspect_render_quality(out, candidate_duration, expected_width, expected_height)
                     subtitle_layout_checks = []
                     for subtitle_asset in (subtitle_path, hook_ass_path):
                         if subtitle_asset and Path(subtitle_asset).suffix.lower() == ".ass":
@@ -2119,7 +2121,7 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                         "learned_variant_hint": candidate.get("learned_variant_hint"),
                         "start": round(candidate["start"], 1),
                         "end": round(candidate["start"] + clip_duration, 1),
-                        "duration": round(clip_duration, 1),
+                        "duration": round(candidate_duration, 1),
                         "score": round(candidate["score"], 2),
                         "rage_score": candidate["rage_score"],
                         "reason": candidate["reason"], "categories": candidate["categories"],
