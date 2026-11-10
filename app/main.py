@@ -539,6 +539,12 @@ def source_watch_loop():
             with SOURCE_WATCH_LOCK:
                 SOURCE_WATCH_STATE["last_scan_at"] = datetime.now(timezone.utc).isoformat()
                 SOURCE_WATCH_STATE["last_error"] = None
+            if any(
+                state.get("source_ingestion") == "authorized_local_inbox"
+                and state.get("status") in {"queued", "running"}
+                for state in BATCH_JOBS.values()
+            ):
+                continue
             files = sorted(
                 path for path in SOURCE_INBOX.iterdir()
                 if path.is_file() and path.suffix.lower() in ALLOWED_SUFFIXES
@@ -567,6 +573,7 @@ def source_watch_loop():
                     save_source_watch_seen(seen)
                     with SOURCE_WATCH_LOCK:
                         SOURCE_WATCH_STATE["queued_count"] += 1
+                    break
                 except Exception as exc:
                     with SOURCE_WATCH_LOCK:
                         SOURCE_WATCH_STATE["last_error"] = f"{original.name}: {str(exc)[:240]}"
