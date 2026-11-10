@@ -203,3 +203,8 @@ Urvalet bedömer nu även när en upptäckt reaktion eller händelse inträffar 
 ### Storyline Detector
 
 Urvalet uppskattar nu om ett klipp innehåller en enkel händelsekedja: uppladdning före en upptäckt reaktion/händelse och efterspel efter den. Bedömningen använder tidsstämplar i transkriptet och befintliga tal-, ljud- och visuella reaktionsankare. Den kan ge en begränsad poängjustering och visar vilka delar som hittats i dashboarden. Detta är en tidsbaserad heuristik – systemet förstår inte säkert orsakssamband, ironi eller hela spelhändelsens sammanhang. Kontrollera därför klippen manuellt.
+
+
+### Adaptiv klippgräns och klipplängd
+
+Efter att ett kandidatögonblick har valts försöker systemet justera start och slut individuellt. Det kan ta bort kortare tysta partier i början/slutet och flytta en gräns för att undvika att kapa ett transkriptsegment eller ord. Den valda reaktionsankaren skyddas, och klippet behåller minst 75 % av den ursprungliga valda längden (med en femsekunders lägstanivå). Den här funktionen ändrar inte den manuella publiceringsprocessen. Justeringen bygger på transkriptets tidsstämplar och är inte en garanti för att visuellt sammanhang eller ljudlösa spelhändelser bevaras; granska därför varje klipp.
