@@ -273,3 +273,27 @@ Create that folder inside your synced OneDrive and place recordings there. The e
 To use another folder, set `CLIPPER_SOURCE_INBOX` to its full local path; this setting takes priority over automatic OneDrive detection. If OneDrive is not installed or synced on the machine running the app, the app falls back to the repository's `source_inbox/` folder.
 
 This is a **OneDrive desktop-sync integration**, not a direct Microsoft Graph connection: OneDrive performs the cloud synchronization and the clipper reads the locally synced files. It does not request Microsoft account passwords or store Microsoft access tokens. The machine running the clipper must have OneDrive sync enabled and the selected folder available locally. On a hosted server without the OneDrive sync client, this method will not access the cloud. Rights approval is still required per exact file version, and nothing is published automatically.
+
+## Direct OneDrive connection (Microsoft Graph)
+
+The dashboard can connect to Microsoft OneDrive using Microsoft's device-code sign-in and Microsoft Graph. This is separate from the optional OneDrive desktop-sync folder. The app requests delegated read-only `Files.Read` and `User.Read` scopes; it does not request write access. The access token is held in application memory only and is cleared on disconnect or server restart. No Microsoft password, client secret, or refresh token is stored by the app.
+
+### Microsoft app registration
+
+An adult account administrator should create/configure the Microsoft Entra app registration and review the permissions/consent before connecting an account:
+
+1. Register an application in Microsoft Entra ID.
+2. Choose account types that support both organizational directories and personal Microsoft accounts, if both are needed.
+3. Enable **Allow public client flows** (device-code flow).
+4. Add Microsoft Graph **delegated** permissions `Files.Read` and `User.Read`.
+5. Copy the Application (client) ID and configure it as the server environment variable `MICROSOFT_CLIENT_ID`. Do not paste IDs or secrets into chat; do not create a client secret for this public-client flow.
+
+Restart the app, select **Anslut OneDrive**, open Microsoft's device login page, enter the displayed code, and then press **Kontrollera inloggning**. Create this folder in the connected OneDrive:
+
+```text
+AI Viral Video Clipper/Inbox
+```
+
+Select **Visa videor i OneDrive** and explicitly download only recordings you own or have permission/licensing to process. A downloaded file is staged in the normal source inbox but is **not** automatically approved or queued: confirm its rights in the regular source list first. The download endpoint also verifies that the selected item belongs to this exact OneDrive folder. The existing watcher can then process only the approved file.
+
+The integration lists supported video files up to 2 GB, downloads only after a manual click, and never publishes automatically. The Graph connection uses in-memory access tokens, so a server restart or token expiry requires signing in again. The API integration must run on a server with outbound access to Microsoft identity and Graph endpoints. Do not expose the local dashboard to untrusted networks; protect the host and its environment configuration.
