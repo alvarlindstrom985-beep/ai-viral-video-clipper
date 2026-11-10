@@ -1335,8 +1335,10 @@ def optimize_clip_boundaries(start: float, end: float, transcript, anchors=None,
     if new_end - new_start < min_duration:
         new_start = max(original_start, min(new_start, new_end - min_duration))
         new_end = min(original_end, max(new_end, new_start + min_duration))
-    new_start = max(original_start, min(new_start, original_end - min_duration))
-    new_end = min(original_end, max(new_end, new_start + min_duration))
+    # Speech may begin just before the proposed window; allow a small expansion
+    # rather than knowingly cutting the first word. Never expand by more than 1.5s.
+    new_start = max(max(0.0, original_start - 1.5), min(new_start, original_end - min_duration))
+    new_end = min(original_end + 1.5, max(new_end, new_start + min_duration))
     return {"start": round(new_start, 3), "end": round(new_end, 3), "duration": round(new_end - new_start, 3),
             "adjustments": list(dict.fromkeys(adjustments)),
             "changed": abs(new_start - original_start) > 0.01 or abs(new_end - original_end) > 0.01}
@@ -1451,6 +1453,25 @@ def storyline_arc_quality(start: float, end: float, transcript, anchors=None):
     return best
 
 
+def context_aware_reaction_score(funny_hits, reaction_hits, laughter_hits,
+                                  rage_hits, visual_score, game_hits):
+    """Prioritize observable streamer reactions; gameplay phrases only add context."""
+    reaction_evidence = (
+        min(len(funny_hits), 3) * 4.0
+        + min(len(reaction_hits), 3) * 5.0
+        + min(int(laughter_hits), 4) * 4.0
+        + min(len(rage_hits), 3) * 5.0
+        + min(max(float(visual_score or 0), 0.0), 20.0) * 0.35
+    )
+    priority_score = round(min(30.0, reaction_evidence), 2)
+    gameplay_context_score = round(min(len(game_hits) * 1.5, 4.5), 2)
+    return {
+        "priority_score": priority_score,
+        "gameplay_context_score": gameplay_context_score,
+        "has_clear_reaction": bool(funny_hits or reaction_hits or laughter_hits or rage_hits or visual_score >= 8)
+    }
+
+
 def score_windows(duration: float, clip_len: float, levels, transcript, clip_count: int, visual_samples=None, allow_overlap=True, media_format='short'):
     latest_start = max(0.0, duration - clip_len)
     step = max(3.0, min(8.0, clip_len / 5))
@@ -1499,10 +1520,15 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
         )
         # Explicit rage phrases are a strong ranking signal; loud audio alone is not treated as anger.
         rage_score = min(len(rage_hits) * 16, 48)
-        game_score = len(game_hits) * 3
+        reaction_priority = context_aware_reaction_score(
+            funny_hits, reaction_hits, laughter_hits, rage_hits,
+            visual["visual_score"], game_hits
+        )
+        # Gameplay is supporting context only; its contribution is deliberately capped.
+        game_score = min(len(game_hits) * 1.5, 4.5)
         speech_score = min(speech_density * 25, 18)
         audio_score_points = min(audio_score * 18, 12)
-        score = streamer_score + rage_score + game_score + speech_score + audio_score_points + visual["visual_score"]
+        score = streamer_score + rage_score + game_score + speech_score + audio_score_points + visual["visual_score"] + reaction_priority["priority_score"]
 
         categories = []
         if funny_hits or laughter_hits:
@@ -1624,6 +1650,9 @@ def score_windows(duration: float, clip_len: float, levels, transcript, clip_cou
             "matched_phrases": matched_phrases,
             "categories": categories,
             "streamer_score": round(streamer_score, 2),
+            "reaction_priority_score": reaction_priority["priority_score"],
+            "gameplay_context_score": reaction_priority["gameplay_context_score"],
+            "has_clear_streamer_reaction": reaction_priority["has_clear_reaction"],
             "rage_score": round(rage_score, 2),
             "rage_phrases": rage_hits,
             "game_score": round(game_score, 2),
@@ -2067,12 +2096,12 @@ def render_batch_job(batch_id, job_id, short_count, long_count, short_length, lo
                         if caption_mode == "word_by_word":
                             subtitle_path = write_word_karaoke_ass(
                                 batch_id, media_type, clip_index, candidate["start"],
-                                candidate["end"], transcript
+                                candidate_end, transcript
                             )
                         if subtitle_path is None:
                             subtitle_path = write_batch_subtitles(
                                 batch_id, media_type, clip_index, candidate["start"],
-                                candidate["end"], transcript
+                                candidate_end, transcript
                             )
                     video_filter = framing + "," + recipe["video_filter"]
                     if subtitle_path and burn_subtitles:
