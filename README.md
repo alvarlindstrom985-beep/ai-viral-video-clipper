@@ -208,3 +208,8 @@ Urvalet uppskattar nu om ett klipp innehåller en enkel händelsekedja: uppladdn
 ### Adaptiv klippgräns och klipplängd
 
 Efter att ett kandidatögonblick har valts försöker systemet justera start och slut individuellt. Det kan ta bort kortare tysta partier i början/slutet och flytta en gräns för att undvika att kapa ett transkriptsegment eller ord. Den valda reaktionsankaren skyddas, och klippet behåller minst 75 % av den ursprungliga valda längden (med en femsekunders lägstanivå). Den här funktionen ändrar inte den manuella publiceringsprocessen. Justeringen bygger på transkriptets tidsstämplar och är inte en garanti för att visuellt sammanhang eller ljudlösa spelhändelser bevaras; granska därför varje klipp.
+
+
+## Context-Aware Clip Selector – streamerreaktionen först
+
+Klippens ranking ger nu en extra, begränsad prioritet till tydliga streamerreaktioner: skratt, spontana reaktionsuttryck, rage-uttryck och visuella reaktionssignaler. GTA-händelser används som sammanhang och deras separata poäng är avsiktligt begränsad. Ett gameplay-ögonblick utan tydlig streamerreaktion ska därför inte vinna enbart på många spelrelaterade nyckelord. Det här är fortfarande signalbaserad heuristik: den kan inte säkert avgöra ironi, känsloläge eller om en reaktion är genuin.
