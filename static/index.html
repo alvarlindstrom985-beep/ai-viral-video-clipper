@@ -144,6 +144,7 @@
       <input id="twitchChannels" type="text" placeholder="exempel: xqc, kai_cenat, your_channel" style="width:100%;max-width:650px">
     </label>
     <button id="saveTwitch" type="button">Spara kanallista</button>
+    <button id="enableTwitchNotifications" type="button">Aktivera live-notiser</button>
     <button id="watchTwitch" type="button">Starta livebevakning</button>
     <button id="stopTwitch" type="button" disabled>Stoppa bevakning</button>
     <p id="twitchStatus" class="muted">Inte aktiv. Kräver Twitch API-uppgifter på servern.</p>
@@ -323,10 +324,39 @@ scanInboxButton.addEventListener('click',scanSourceInbox);
 processInboxButton.addEventListener('click',processSourceInbox);
 const twitchInput=document.querySelector('#twitchChannels');
 const saveTwitchButton=document.querySelector('#saveTwitch');
+const enableTwitchNotificationsButton=document.querySelector('#enableTwitchNotifications');
 const watchButton=document.querySelector('#watchTwitch'), stopButton=document.querySelector('#stopTwitch');
 const twitchStatus=document.querySelector('#twitchStatus'), twitchResults=document.querySelector('#twitchResults');
 const TWITCH_CHANNELS_STORAGE_KEY='clipper_twitch_channels_v1';
 let twitchTimer=null;
+let previousTwitchLiveState=null;
+let twitchNotificationPermission=(('Notification' in window)?Notification.permission:'unsupported');
+function updateTwitchNotificationButton(){
+  if(twitchNotificationPermission==='granted'){
+    enableTwitchNotificationsButton.textContent='Live-notiser aktiverade';
+    enableTwitchNotificationsButton.disabled=true;
+  }else if(twitchNotificationPermission==='unsupported'){
+    enableTwitchNotificationsButton.textContent='Notiser stöds inte här';
+    enableTwitchNotificationsButton.disabled=true;
+  }else if(twitchNotificationPermission==='denied'){
+    enableTwitchNotificationsButton.textContent='Notiser blockerade i webbläsaren';
+    enableTwitchNotificationsButton.disabled=true;
+  }
+}
+enableTwitchNotificationsButton.addEventListener('click',async()=>{
+  if(!('Notification' in window)){
+    twitchStatus.textContent='Den här webbläsaren stöder inte skrivbordsnotiser.';
+    updateTwitchNotificationButton();return;
+  }
+  try{
+    twitchNotificationPermission=await Notification.requestPermission();
+    updateTwitchNotificationButton();
+    twitchStatus.textContent=twitchNotificationPermission==='granted'
+      ?'Live-notiser är aktiverade. Du får en notis när en bevakad kanal går från offline till live.'
+      :'Notiser aktiverades inte. Kontrollera webbläsarens behörigheter.';
+  }catch(error){twitchStatus.textContent='Kunde inte aktivera notiser: '+error.message}
+});
+updateTwitchNotificationButton();
 function savedTwitchChannels(){
   try{return localStorage.getItem(TWITCH_CHANNELS_STORAGE_KEY)||''}catch(error){return ''}
 }
@@ -363,6 +393,24 @@ async function checkTwitch(){
     if(!response.ok)throw new Error(data.detail||'Twitch-kontrollen misslyckades');
     twitchResults.innerHTML='';
     const live=data.channels.filter(channel=>channel.is_live);
+    const currentLiveState=Object.fromEntries(data.channels.map(channel=>[channel.login,!!channel.is_live]));
+    if(previousTwitchLiveState!==null && twitchNotificationPermission==='granted'){
+      live.forEach(channel=>{
+        if(previousTwitchLiveState[channel.login]===false){
+          const notification=new Notification('@'+channel.login+' är live!',{
+            body:(channel.title||'Har startat en livesändning')+(channel.game_name?' · '+channel.game_name:''),
+            icon:'https://www.twitch.tv/favicon.ico',
+            tag:'twitch-live-'+channel.login
+          });
+          notification.onclick=()=>{
+            window.focus();
+            window.open(channel.url,'_blank','noopener');
+            notification.close();
+          };
+        }
+      });
+    }
+    previousTwitchLiveState=currentLiveState;
     data.channels.forEach(channel=>{
       const card=document.createElement('article');card.className='clip';
       const title=document.createElement('h3');title.textContent='@'+channel.login;
